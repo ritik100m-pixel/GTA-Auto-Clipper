@@ -1,4 +1,4 @@
-﻿"""Persistent job queue and batch ledger for GTA Auto Clipper Cloud.
+"""Persistent job queue and batch ledger for GTA Auto Clipper Cloud.
 
 Uses only Python's standard library. No media processing or publishing is
 performed by this module.
@@ -185,16 +185,22 @@ class CloudQueue:
             return self._job_dict(claimed)
 
     def heartbeat(self, job_id, worker_id, *, lease_seconds=900):
-        expires = iso_time(utc_now() + timedelta(seconds=lease_seconds))
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be positive")
+        now = utc_now()
+        now_text = iso_time(now)
+        expires = iso_time(now + timedelta(seconds=lease_seconds))
         with self._db() as db:
             changed = db.execute("""
                 UPDATE jobs
                 SET lease_expires_at = ?, updated_at = ?
                 WHERE id = ? AND status = 'running' AND lease_owner = ?
-            """, (expires, iso_time(), job_id, worker_id)).rowcount
+                  AND lease_expires_at > ?
+            """, (expires, now_text, job_id, worker_id, now_text)).rowcount
             return changed == 1
 
     def complete(self, job_id, worker_id):
+        now_text = iso_time()
         with self._db() as db:
             changed = db.execute("""
                 UPDATE jobs
@@ -203,17 +209,21 @@ class CloudQueue:
                     lease_expires_at = NULL,
                     updated_at = ?
                 WHERE id = ? AND status = 'running' AND lease_owner = ?
-            """, (iso_time(), job_id, worker_id)).rowcount
+                  AND lease_expires_at > ?
+            """, (now_text, job_id, worker_id, now_text)).rowcount
             return changed == 1
 
     def fail(self, job_id, worker_id, error, *, retry_delay_seconds=60):
         """Retry after a delay, or mark failed when attempts are exhausted."""
         now = utc_now()
+        now_text = iso_time(now)
         with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
             row = db.execute("""
                 SELECT attempts, max_attempts FROM jobs
                 WHERE id = ? AND status = 'running' AND lease_owner = ?
-            """, (job_id, worker_id)).fetchone()
+                  AND lease_expires_at > ?
+            """, (job_id, worker_id, now_text)).fetchone()
             if row is None:
                 return False
 
@@ -221,15 +231,15 @@ class CloudQueue:
             status = "queued" if retry else "failed"
             available = iso_time(
                 now + timedelta(seconds=max(0, retry_delay_seconds))
-            ) if retry else iso_time(now)
+            ) if retry else now_text
 
             db.execute("""
                 UPDATE jobs
                 SET status = ?, available_at = ?,
                     lease_owner = NULL, lease_expires_at = NULL,
                     last_error = ?, updated_at = ?
-                WHERE id = ?
-            """, (status, available, str(error)[:4000], iso_time(now), job_id))
+                WHERE id = ? AND status = 'running' AND lease_owner = ?
+            """, (status, available, str(error)[:4000], now_text, job_id, worker_id))
             return True
 
     def get_job(self, job_id):

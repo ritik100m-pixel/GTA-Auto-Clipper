@@ -1,4 +1,5 @@
-﻿import tempfile
+from concurrent.futures import ThreadPoolExecutor
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -101,5 +102,45 @@ class CloudQueueTests(unittest.TestCase):
         )
 
 
+    def test_expired_worker_cannot_heartbeat_complete_or_fail(self):
+        job = self.queue.enqueue(
+            "capture", "stale-worker-1", {"url": "test"},
+            authorized=True
+        )
+        self.queue.claim_next("worker-old")
+
+        with self.queue._db() as db:
+            db.execute(
+                "UPDATE jobs SET lease_expires_at = ? WHERE id = ?",
+                (iso_time(datetime.now(timezone.utc) - timedelta(seconds=5)),
+                 job["id"])
+            )
+
+        self.assertFalse(self.queue.heartbeat(job["id"], "worker-old"))
+        self.assertFalse(self.queue.complete(job["id"], "worker-old"))
+        self.assertFalse(self.queue.fail(job["id"], "worker-old", "stale"))
+
+        recovered = self.queue.claim_next("worker-new")
+        self.assertEqual(recovered["id"], job["id"])
+        self.assertEqual(recovered["lease_owner"], "worker-new")
+
+    def test_two_workers_cannot_claim_the_same_job(self):
+        self.queue.enqueue(
+            "capture", "race-job-1", {"url": "test"}, authorized=True
+        )
+        second_queue = CloudQueue(self.db_path)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(
+                lambda item: item[0].claim_next(item[1]),
+                [(self.queue, "worker-a"), (second_queue, "worker-b")]
+            ))
+
+        claimed = [job for job in results if job is not None]
+        empty = [job for job in results if job is None]
+
+        self.assertEqual(len(claimed), 1)
+        self.assertEqual(len(empty), 1)
+        self.assertEqual(claimed[0]["job_key"], "race-job-1")
 if __name__ == "__main__":
     unittest.main()
