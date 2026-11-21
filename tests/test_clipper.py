@@ -254,6 +254,8 @@ class PersistentRecordingRecoveryTests(unittest.TestCase):
         self.assertEqual(metadata["streamer"], "StreamerX")
         self.assertEqual(metadata["score"], 3.5)
         self.assertTrue(metadata["test"])
+        self.assertIn("category", metadata)
+        self.assertIn("detected_tags", metadata)
 
     def test_process_chunk_records_failure_on_exception(self):
         chunk_file = self._write_chunk("chunk_00000.ts")

@@ -43,3 +43,18 @@ jobs:
       - name: Run publisher tests
         run: python -m unittest tests.test_publisher -v
 
+      - name: Run source policy tests
+        run: python -m unittest tests.test_source_policy -v
+
+      - name: Run content classifier tests
+        run: python -m unittest tests.test_content_classifier -v
+
+      - name: Run smart scheduler tests
+        run: python -m unittest tests.test_smart_scheduler -v
+
+      - name: Run YouTube publisher tests
+        run: python -m unittest tests.test_youtube_publisher -v
+
+      - name: Run cloud runner tests
+        run: python -m unittest tests.test_cloud_runner -v
+

@@ -1,0 +1,95 @@
+name: GTA Cloud Auto-Clipper
+
+on:
+  schedule:
+    # Run twice daily: 04:00 UTC and 16:00 UTC (09:30 and 21:30 IST)
+    - cron: "0 4,16 * * *"
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Max execution duration in minutes (max 330 to stay safely under 6h runner limit)"
+        required: false
+        default: "300"
+      target_clips:
+        description: "Target number of quality clips"
+        required: false
+        default: "10"
+      dry_run:
+        description: "Simulate publishing without external posts (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  cloud-autoclipper-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345 # 5 hours 45 minutes safe cutoff
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system media dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Restore persistent cloud state
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud_state
+            recordings
+          key: cloud-clipper-state-${{ github.run_id }}
+          restore-keys: |
+            cloud-clipper-state-
+
+      - name: Execute Autonomous Cloud Batch
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
+          ZERNIO_YOUTUBE_ACCOUNT_ID: ${{ secrets.ZERNIO_YOUTUBE_ACCOUNT_ID }}
+          ZERNIO_INSTAGRAM_ACCOUNT_ID: ${{ secrets.ZERNIO_INSTAGRAM_ACCOUNT_ID }}
+          GTA_UNATTENDED_POSTS: "1"
+        run: |
+          DURATION_MINUTES="${{ inputs.duration_minutes || '300' }}"
+          TARGET_CLIPS="${{ inputs.target_clips || '10' }}"
+          DRY_RUN_INPUT="${{ inputs.dry_run || 'false' }}"
+          DURATION_SEC=$(( ${DURATION_MINUTES:-300} * 60 ))
+          DRY_RUN_FLAG=""
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python cloud_runner.py --duration "$DURATION_SEC" --target-clips "${TARGET_CLIPS:-10}" $DRY_RUN_FLAG
+
+      - name: Upload Output Clips Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-clips-${{ github.run_number }}
+          path: output/
+          retention-days: 14
+
+      - name: Upload State Snapshot Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-state-${{ github.run_number }}
+          path: |
+            cloud_state/
+          retention-days: 30

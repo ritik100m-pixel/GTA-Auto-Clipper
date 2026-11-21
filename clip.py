@@ -8,6 +8,10 @@ from pathlib import Path
 import numpy as np
 from live_chat import create_live_chat_collector, score_chat_windows, summarize_chat_window
 from recording_session import RecordingSession
+try:
+    from content_classifier import classify_clip_content
+except ImportError:
+    classify_clip_content = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
@@ -668,12 +672,21 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                 else:
                     selection_signals = ["audio", "speech"]
 
+                cat_info = (
+                    classify_clip_content(transcript=text, stream_title=title, words=words)
+                    if classify_clip_content
+                    else {"category": "high_action", "confidence": 0.5, "tags": ["#GTA5", "#GTAV", "#Shorts"]}
+                )
+
                 json_path = os.path.join(out_dir, name + ".json")
                 with open(json_path, "w", encoding="utf-8") as meta:
                     json.dump({
                         "video": name + ".mp4", "channel": "gta", "source_url": source_url,
                         "streamer": who.get("name", "local source"), "credit": who.get("credit"), "stream_title": title,
                         "score": score, "transcript": text,
+                        "category": cat_info.get("category", "high_action"),
+                        "category_confidence": cat_info.get("confidence", 0.5),
+                        "detected_tags": cat_info.get("tags", ["#GTA5", "#GTAV", "#Shorts"]),
                         "spoken_language": getattr(words, "spoken_language", "unknown"),
                         "caption_language": getattr(words, "caption_language", "English"),
                         "caption_fallback_reason": getattr(words, "caption_fallback_reason", None),
