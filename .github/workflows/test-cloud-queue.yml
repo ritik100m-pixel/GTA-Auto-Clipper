@@ -27,3 +27,6 @@ jobs:
 
       - name: Run persistent queue tests
         run: python -m unittest tests.test_cloud_queue -v
+
+      - name: Run persistent recording session tests
+        run: python -m unittest tests.test_recording_session -v
