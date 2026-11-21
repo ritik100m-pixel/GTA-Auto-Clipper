@@ -36,3 +36,10 @@ jobs:
 
       - name: Run clipper tests
         run: python -m unittest tests.test_clipper -v
+
+      - name: Run live chat tests
+        run: python -m unittest tests.test_live_chat -v
+
+      - name: Run publisher tests
+        run: python -m unittest tests.test_publisher -v
+
