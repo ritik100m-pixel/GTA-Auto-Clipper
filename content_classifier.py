@@ -61,9 +61,16 @@ def _clean_tokens(text):
     return [w for w in words if len(w) > 1 or ord(w[0]) > 255]
 
 
-def classify_clip_content(transcript="", chat_messages=None, audio_spike=0.0):
+def classify_clip_content(transcript="", chat_messages=None, audio_spike=0.0, stream_title="", words=None, **kwargs):
     """Classify clip into GTA content categories based on speech, chat, and audio."""
+    if not transcript and words:
+        try:
+            transcript = " ".join(str(w[2]) for w in words if len(w) >= 3)
+        except Exception:
+            pass
     transcript_tokens = _clean_tokens(transcript)
+    if stream_title:
+        transcript_tokens.extend(_clean_tokens(stream_title))
     chat_tokens = []
     if chat_messages:
         for msg in chat_messages:
