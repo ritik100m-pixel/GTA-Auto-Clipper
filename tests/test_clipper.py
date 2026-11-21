@@ -12,12 +12,26 @@ from clip import (
     write_ass,
     build_video_filter, choose_crop_offset, choose_vertical_game_roi, gameplay_crop_offset, reaction_score,
     should_apply_smart_crop,
-    source_identity, select_clip_start,
+    source_identity, recording_session_id, select_clip_start,
     DEFAULT_MAX_SECONDS, pick_moments, mask_word, ytdlp_cmd,
 )
 
 
 class ClipperReleaseTests(unittest.TestCase):
+    def test_recording_session_id_is_stable_for_same_stream(self):
+        first = recording_session_id("youtube-video-123")
+        second = recording_session_id("youtube-video-123")
+        self.assertEqual(first, second)
+
+    def test_recording_session_id_differs_between_streams(self):
+        first = recording_session_id("youtube-video-123")
+        second = recording_session_id("youtube-video-456")
+        self.assertNotEqual(first, second)
+
+    def test_recording_session_id_rejects_missing_source(self):
+        with self.assertRaises(ValueError):
+            recording_session_id(None)
+
     def test_fit_layout_keeps_the_full_source_over_a_blurred_background(self):
         graph = build_video_filter('captions.ass', layout='fit')
         self.assertIn('[b]scale=1080:-2[fg]', graph)

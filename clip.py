@@ -2,7 +2,7 @@
 
 This command only records/renders. It never uploads or publishes.
 """
-import argparse, glob, json, math, os, re, shutil, subprocess, sys, time
+import argparse, glob, json, math, os, re, shutil, subprocess, sys, time, uuid
 from datetime import datetime
 import numpy as np
 from live_chat import create_live_chat_collector, score_chat_windows, summarize_chat_window
@@ -56,6 +56,12 @@ def source_identity(info, test=False):
         "test": bool(test),
     }
 
+
+def recording_session_id(source_id):
+    """Return a stable session UUID for a YouTube live video ID."""
+    if not source_id or not str(source_id).strip():
+        raise ValueError("source_id is required for a persistent recording session")
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"gta-auto-clipper:youtube-live:{source_id}"))
 
 # ---------- recording ----------
 def start_recorder(url, file_, chunk, max_seconds, outdir):
