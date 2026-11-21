@@ -254,6 +254,66 @@ class RecordingSession:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_capture(self, capture_id):
+        with self._db() as db:
+            row = db.execute(
+                "SELECT * FROM captures WHERE id = ?", (capture_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_captures(self):
+        with self._db() as db:
+            rows = db.execute("SELECT * FROM captures ORDER BY created_at, id").fetchall()
+            return [dict(row) for row in rows]
+
+    def resolve_chunk_path(self, chunk_or_id):
+        if isinstance(chunk_or_id, dict):
+            chunk = chunk_or_id
+        else:
+            chunk = self.get_chunk(chunk_or_id)
+        if not chunk:
+            raise ValueError(f"unknown chunk: {chunk_or_id}")
+        with self._db() as db:
+            capture = db.execute(
+                "SELECT directory FROM captures WHERE id = ?", (chunk["capture_id"],)
+            ).fetchone()
+            if not capture:
+                raise ValueError(f"unknown capture: {chunk['capture_id']}")
+            return (self.path / capture["directory"] / chunk["relative_path"]).resolve()
+
+    def recover_unregistered_chunks(self, capture_id=None):
+        """Find and register any valid .ts chunk files on disk that are not yet in the session database."""
+        recovered = []
+        with self._db() as db:
+            if capture_id:
+                captures = db.execute(
+                    "SELECT id, directory FROM captures WHERE id = ?", (capture_id,)
+                ).fetchall()
+            else:
+                captures = db.execute(
+                    "SELECT id, directory FROM captures ORDER BY created_at, id"
+                ).fetchall()
+
+            for capture in captures:
+                cap_dir = (self.path / capture["directory"]).resolve()
+                if not cap_dir.is_dir():
+                    continue
+                for ts_path in sorted(cap_dir.glob("chunk_*.ts")):
+                    if not ts_path.is_file() or ts_path.stat().st_size == 0:
+                        continue
+                    try:
+                        relative = ts_path.relative_to(cap_dir).as_posix()
+                    except ValueError:
+                        continue
+                    existing = db.execute(
+                        "SELECT id FROM chunks WHERE capture_id = ? AND relative_path = ?",
+                        (capture["id"], relative)
+                    ).fetchone()
+                    if existing is None:
+                        chunk = self.register_chunk(capture["id"], ts_path)
+                        recovered.append(chunk)
+        return recovered
+
     def list_recoverable(self):
         now = _stamp()
         with self._db() as db:

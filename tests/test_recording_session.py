@@ -185,5 +185,51 @@ class RecordingSessionTests(unittest.TestCase):
         self.assertIsNone(self.session.claim_next("worker-final"))
         self.assertEqual(self.session.list_recoverable(), [])
 
+    def test_resolve_chunk_path_matches_original_file(self):
+        capture, path, chunk = self._chunk()
+        resolved_by_id = self.session.resolve_chunk_path(chunk["id"])
+        resolved_by_dict = self.session.resolve_chunk_path(chunk)
+        self.assertEqual(resolved_by_id, path.resolve())
+        self.assertEqual(resolved_by_dict, path.resolve())
+
+    def test_resolve_chunk_path_rejects_unknown(self):
+        with self.assertRaises(ValueError):
+            self.session.resolve_chunk_path("00000000-0000-0000-0000-000000000000")
+
+    def test_get_and_list_captures(self):
+        first = self.session.new_capture()
+        second = self.session.new_capture()
+        captures = self.session.list_captures()
+        self.assertEqual(len(captures), 2)
+        self.assertEqual(captures[0]["id"], first["id"])
+        self.assertEqual(captures[1]["id"], second["id"])
+        fetched = self.session.get_capture(first["id"])
+        self.assertIsNotNone(fetched)
+        self.assertEqual(fetched["id"], first["id"])
+        self.assertEqual(fetched["directory"], captures[0]["directory"])
+
+    def test_recover_unregistered_chunks_discovers_unregistered_files(self):
+        capture = self.session.new_capture()
+        chunk_file = Path(capture["path"]) / "chunk_00001.ts"
+        chunk_file.write_bytes(b"recovered-video-data")
+
+        # An empty file should be ignored
+        empty_file = Path(capture["path"]) / "chunk_00002.ts"
+        empty_file.touch()
+
+        recovered = self.session.recover_unregistered_chunks(capture["id"])
+        self.assertEqual(len(recovered), 1)
+        self.assertEqual(recovered[0]["relative_path"], "chunk_00001.ts")
+        self.assertEqual(recovered[0]["status"], "pending")
+
+        # Second recovery should not duplicate already registered files
+        again = self.session.recover_unregistered_chunks(capture["id"])
+        self.assertEqual(again, [])
+
+        # Recoverable list should now include the newly discovered chunk
+        recoverable = self.session.list_recoverable()
+        self.assertTrue(any(c["id"] == recovered[0]["id"] for c in recoverable))
+
+
 if __name__ == "__main__":
     unittest.main()
