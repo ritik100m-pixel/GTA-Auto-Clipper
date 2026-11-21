@@ -169,10 +169,50 @@ class RecordingSession:
             ).fetchone()
             return dict(claimed)
 
-    def complete_chunk(self, chunk_id, worker_id, video_path, metadata_path):
-        outputs = [Path(video_path).resolve(), Path(metadata_path).resolve()]
-        if any(not p.is_file() or p.stat().st_size == 0 for p in outputs):
-            raise ValueError("video and metadata outputs must both exist and be non-empty")
+    def renew_lease(self, chunk_id, worker_id, *, lease_seconds=900):
+        if not worker_id:
+            raise ValueError("worker_id is required")
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be positive")
+
+        now = _now()
+        now_text = _stamp(now)
+        expiry = _stamp(now + timedelta(seconds=lease_seconds))
+
+        with self._db() as db:
+            changed = db.execute("""
+                UPDATE chunks
+                SET lease_expires_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'processing'
+                  AND lease_owner = ? AND lease_expires_at > ?
+            """, (expiry, now_text, chunk_id, worker_id, now_text)).rowcount
+            return changed == 1
+
+    def complete_chunk(self, chunk_id, worker_id, outputs):
+        """Complete a chunk with zero or more (video_path, metadata_path) pairs."""
+        validated_outputs = []
+
+        for pair in outputs:
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                raise ValueError(
+                    "each output must contain a video path and metadata path"
+                )
+
+            video_path, metadata_path = (
+                Path(pair[0]).resolve(),
+                Path(pair[1]).resolve()
+            )
+
+            if any(not p.is_file() or p.stat().st_size == 0
+                   for p in (video_path, metadata_path)):
+                raise ValueError(
+                    "video and metadata outputs must both exist and be non-empty"
+                )
+
+            validated_outputs.append({
+                "video": str(video_path),
+                "metadata": str(metadata_path)
+            })
 
         now = _stamp()
         with self._db() as db:
@@ -183,10 +223,9 @@ class RecordingSession:
                     updated_at = ?
                 WHERE id = ? AND status = 'processing' AND lease_owner = ?
                   AND lease_expires_at > ?
-            """, (json.dumps([str(p) for p in outputs]), now,
+            """, (json.dumps(validated_outputs), now,
                   chunk_id, worker_id, now)).rowcount
             return changed == 1
-
     def fail_chunk(self, chunk_id, worker_id, error):
         now = _stamp()
         with self._db() as db:

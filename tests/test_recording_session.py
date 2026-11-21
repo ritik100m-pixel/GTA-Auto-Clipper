@@ -57,7 +57,7 @@ class RecordingSessionTests(unittest.TestCase):
         metadata.write_text('{"approved": false}', encoding="utf-8")
 
         self.assertTrue(self.session.complete_chunk(
-            chunk["id"], "worker-a", video, metadata
+            chunk["id"], "worker-a", [(video, metadata)]
         ))
         self.assertEqual(self.session.get_chunk(chunk["id"])["status"], "completed")
 
@@ -78,7 +78,7 @@ class RecordingSessionTests(unittest.TestCase):
         metadata.write_text("{}", encoding="utf-8")
 
         self.assertFalse(self.session.complete_chunk(
-            chunk["id"], "worker-old", video, metadata
+            chunk["id"], "worker-old", [(video, metadata)]
         ))
         recovered = self.session.claim_next("worker-new")
         self.assertEqual(recovered["id"], chunk["id"])
@@ -104,6 +104,86 @@ class RecordingSessionTests(unittest.TestCase):
             ))
         self.assertEqual(sum(item is not None for item in results), 1)
 
+    def test_worker_can_renew_its_lease(self):
+        _, _, chunk = self._chunk()
+        claimed = self.session.claim_next("worker-a")
+        self.assertEqual(claimed["id"], chunk["id"])
+
+        old_expiry = claimed["lease_expires_at"]
+        self.assertTrue(self.session.renew_lease(
+            chunk["id"], "worker-a", lease_seconds=1800
+        ))
+
+        renewed = self.session.get_chunk(chunk["id"])
+        self.assertGreater(renewed["lease_expires_at"], old_expiry)
+
+    def test_expired_worker_cannot_renew_lease(self):
+        _, _, chunk = self._chunk()
+        self.session.claim_next("worker-old")
+
+        with self.session._db() as db:
+            db.execute(
+                "UPDATE chunks SET lease_expires_at = ? WHERE id = ?",
+                (_stamp(datetime.now(timezone.utc) - timedelta(seconds=5)),
+                 chunk["id"])
+            )
+
+        self.assertFalse(self.session.renew_lease(
+            chunk["id"], "worker-old"
+        ))
+
+    def test_chunk_can_complete_with_multiple_output_pairs(self):
+        _, _, chunk = self._chunk()
+        self.session.claim_next("worker-a")
+
+        video1 = Path(self.temp.name) / "clip-1.mp4"
+        metadata1 = Path(self.temp.name) / "clip-1.json"
+        video2 = Path(self.temp.name) / "clip-2.mp4"
+        metadata2 = Path(self.temp.name) / "clip-2.json"
+
+        for path in (video1, metadata1, video2, metadata2):
+            path.write_bytes(b"test-output")
+
+        self.assertTrue(self.session.complete_chunk(
+            chunk["id"], "worker-a",
+            [(video1, metadata1), (video2, metadata2)]
+        ))
+
+        saved = self.session.get_chunk(chunk["id"])
+        self.assertEqual(saved["status"], "completed")
+
+        import json
+        outputs = json.loads(saved["outputs_json"])
+        self.assertEqual(len(outputs), 2)
+        self.assertEqual(outputs[0]["video"], str(video1.resolve()))
+        self.assertEqual(outputs[1]["metadata"], str(metadata2.resolve()))
+
+    def test_chunk_can_complete_with_zero_outputs(self):
+        _, _, chunk = self._chunk()
+        self.session.claim_next("worker-a")
+
+        self.assertTrue(self.session.complete_chunk(
+            chunk["id"], "worker-a", []
+        ))
+
+        saved = self.session.get_chunk(chunk["id"])
+        self.assertEqual(saved["status"], "completed")
+        self.assertEqual(saved["outputs_json"], "[]")
+
+    def test_chunk_becomes_failed_after_maximum_attempts(self):
+        _, _, chunk = self._chunk()
+
+        for attempt in range(3):
+            claimed = self.session.claim_next(f"worker-{attempt}")
+            self.assertEqual(claimed["id"], chunk["id"])
+            self.assertTrue(self.session.fail_chunk(
+                chunk["id"], f"worker-{attempt}", "simulated failure"
+            ))
+
+        saved = self.session.get_chunk(chunk["id"])
+        self.assertEqual(saved["status"], "failed")
+        self.assertIsNone(self.session.claim_next("worker-final"))
+        self.assertEqual(self.session.list_recoverable(), [])
 
 if __name__ == "__main__":
     unittest.main()
