@@ -254,6 +254,15 @@ class RecordingSession:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_chunk_by_path(self, capture_id, relative_path):
+        with self._db() as db:
+            row = db.execute(
+                "SELECT * FROM chunks WHERE capture_id = ? AND relative_path = ?",
+                (capture_id, str(relative_path))
+            ).fetchone()
+            return dict(row) if row else None
+
+
     def get_capture(self, capture_id):
         with self._db() as db:
             row = db.execute(

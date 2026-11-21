@@ -4,8 +4,10 @@ This command only records/renders. It never uploads or publishes.
 """
 import argparse, glob, json, math, os, re, shutil, subprocess, sys, time, uuid
 from datetime import datetime
+from pathlib import Path
 import numpy as np
 from live_chat import create_live_chat_collector, score_chat_windows, summarize_chat_window
+from recording_session import RecordingSession
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(HERE, "output")
@@ -601,6 +603,137 @@ def cut(chunk_path, words, start, length, out_mp4, credit, crop=False, crop_offs
     return True
 
 
+def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url,
+                  clip_len=30, top=1, min_score=DEFAULT_MIN_SCORE, lead_in=6,
+                  layout="fill", crop=False, moment_source="chat",
+                  gameplay_confirmed=False, chat=None, chat_source="disabled",
+                  chat_fallback=None, n_clips_start=0):
+    """Process a chunk into vertical clips and record outcomes in the session."""
+    if session is not None and isinstance(chunk_row, dict):
+        chunk_path = session.resolve_chunk_path(chunk_row)
+        chunk_id = chunk_row["id"]
+    else:
+        chunk_path = Path(chunk_row).resolve() if not isinstance(chunk_row, dict) else Path(chunk_row.get("path", "")).resolve()
+        chunk_id = None
+
+    if not chunk_path.is_file() or chunk_path.stat().st_size == 0:
+        if session is not None and chunk_id is not None:
+            session.fail_chunk(chunk_id, worker_id, "chunk file missing or empty")
+        return [], 0
+
+    c = str(chunk_path)
+    print(f"analysing {os.path.basename(c)} ...")
+    try:
+        if session is not None and chunk_id is not None:
+            session.renew_lease(chunk_id, worker_id)
+
+        chunk_length = media_duration(c)
+        chunk_end_epoch = os.path.getmtime(c)
+        chunk_start_epoch = chunk_end_epoch - chunk_length
+        absolute_chat = chat.messages_between(chunk_start_epoch, chunk_end_epoch) if chat else []
+        chunk_chat = [{"t": item["epoch"] - chunk_start_epoch,
+                       "user": item["user"], "text": item["text"]} for item in absolute_chat]
+        chunk_moment_source = moment_source
+        if chunk_moment_source in {"chat", "combined"} and not chunk_chat:
+            chunk_moment_source = "audio"
+            if moment_source == "chat" and chat:
+                print("  no live chat messages for this chunk; using audio/speech instead")
+
+        moments, words = pick_moments(c, clip_len, top, min_score, lead_in,
+                                      chunk_chat, chunk_moment_source)
+        outputs = []
+        for score, start in moments:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            name = f"gta-{stamp}-{n_clips_start + len(outputs) + 1}"
+            mp4 = os.path.join(out_dir, name + ".mp4")
+            layout_mode = "fill" if crop else layout
+            crop_offset, source_roi = detect_smart_frame(c, start, clip_len) if layout_mode == "fill" else (0.5, None)
+            smart_crop = layout_mode == "fill"
+            pan_keys = None
+            if smart_crop and source_roi is None:
+                from player_track import track_player
+                pan_keys = track_player(c, start, clip_len)
+                if pan_keys is None:
+                    crop_offset = 0.5
+            caption_margin_v = caption_margin_for_video(c, crop=smart_crop, source_roi=None if smart_crop else source_roi)
+            if cut(c, words, start, clip_len, mp4, who.get("credit"), crop=smart_crop,
+                   crop_offset=crop_offset, source_roi=source_roi,
+                   caption_margin_v=caption_margin_v, layout=layout_mode, pan_keys=pan_keys):
+                text = " ".join(w[2] for w in words if start <= w[0] < start + clip_len)
+                chat_summary = summarize_chat_window(chunk_chat, start, clip_len)
+                if chunk_moment_source == "chat":
+                    selection_signals = ["live-chat"]
+                elif chunk_moment_source == "combined":
+                    selection_signals = ["audio", "speech", "live-chat"]
+                else:
+                    selection_signals = ["audio", "speech"]
+
+                json_path = os.path.join(out_dir, name + ".json")
+                with open(json_path, "w", encoding="utf-8") as meta:
+                    json.dump({
+                        "video": name + ".mp4", "channel": "gta", "source_url": source_url,
+                        "streamer": who.get("name", "local source"), "credit": who.get("credit"), "stream_title": title,
+                        "score": score, "transcript": text,
+                        "spoken_language": getattr(words, "spoken_language", "unknown"),
+                        "caption_language": getattr(words, "caption_language", "English"),
+                        "caption_fallback_reason": getattr(words, "caption_fallback_reason", None),
+                        "caption_position": "lower-third-of-visible-gameplay",
+                        "framing": "fill-9x16" if smart_crop else "full-source-blur-fill",
+                        "gameplay_confirmed": bool(gameplay_confirmed),
+                        "moment_source_requested": moment_source,
+                        "moment_source_used": chunk_moment_source,
+                        "selection_signals": selection_signals,
+                        "live_chat_source": chat_source,
+                        "live_chat_status": chat.status if chat else "unavailable",
+                        "chat_fallback_reason": (chat.error if chat and chat.status == "unavailable" else chat_fallback) if not chat or chat.status == "unavailable" else None,
+                        "chat_message_count": chat_summary["message_count"],
+                        "unique_chatters": chat_summary["unique_chatters"],
+                        "reaction_chatters": chat_summary["reaction_chatters"],
+                        "crop_offset": crop_offset if smart_crop else None,
+                        "player_track": [[round(t, 2), round(x, 3)] for t, x in pan_keys] if pan_keys else None,
+                        "source_roi": list(source_roi) if source_roi else None,
+                        "title": None, "youtube_description": None,
+                        "instagram_caption": None, "hashtags": [], "post_at": None,
+                        "approved": False, "posted": {}, "test": who.get("test", False),
+                    }, meta, indent=2, ensure_ascii=False)
+                outputs.append((mp4, json_path))
+                print(f"  clip {name}.mp4  score {score}")
+
+        if session is not None and chunk_id is not None:
+            session.complete_chunk(chunk_id, worker_id, outputs)
+        return outputs, len(outputs)
+    except Exception as exc:
+        if session is not None and chunk_id is not None:
+            session.fail_chunk(chunk_id, worker_id, str(exc))
+        raise
+
+
+def run_recovery(session, worker_id, out_dir, who, title, source_url,
+                 clip_len=30, top=1, min_score=DEFAULT_MIN_SCORE, lead_in=6,
+                 layout="fill", crop=False, moment_source="chat",
+                 gameplay_confirmed=False, chat=None, chat_source="disabled",
+                 chat_fallback=None, n_clips_start=0):
+    """Recover and process all pending or abandoned chunks in a persistent session."""
+    session.recover_unregistered_chunks()
+    processed_count = 0
+    all_outputs = []
+    while True:
+        claimed = session.claim_next(worker_id)
+        if not claimed:
+            break
+        outputs, _ = process_chunk(
+            session, claimed, worker_id, out_dir, who, title, source_url,
+            clip_len=clip_len, top=top, min_score=min_score, lead_in=lead_in,
+            layout=layout, crop=crop, moment_source=moment_source,
+            gameplay_confirmed=gameplay_confirmed, chat=chat,
+            chat_source=chat_source, chat_fallback=chat_fallback,
+            n_clips_start=n_clips_start + len(all_outputs),
+        )
+        all_outputs.extend(outputs)
+        processed_count += 1
+    return all_outputs, processed_count
+
+
 # ---------- main loop ----------
 def main():
     for stream in (sys.stdout, sys.stderr):
@@ -634,10 +767,15 @@ def main():
     ap.add_argument("--min-score", type=float, default=DEFAULT_MIN_SCORE)
     ap.add_argument("--keep-minutes", type=int, default=30)
     ap.add_argument("--output-dir", default=None, help="override the output folder")
+    ap.add_argument("--session-id", default=None, help="recording session UUID (defaults to stable stream ID)")
+    ap.add_argument("--recordings-dir", default=None, help="base directory for persistent recording sessions")
+    ap.add_argument("--worker-id", default=None, help="worker ID for chunk leases")
+    ap.add_argument("--no-session", action="store_true", help="disable persistent session tracking (ephemeral mode)")
+    ap.add_argument("--recover-only", action="store_true", help="process pending/interrupted session chunks without recording")
     a = ap.parse_args()
     global _forced_language
     _forced_language = None if a.spoken_language == "auto" else a.spoken_language
-    if not a.url and not a.file:
+    if not a.url and not a.file and not (a.recover_only and a.session_id):
         sys.exit(__doc__)
     if a.file and not a.test:
         sys.exit("--file is only allowed with --test.")
@@ -647,7 +785,7 @@ def main():
             sys.exit(f"Input file not found: {a.file}")
     if a.max_seconds < 0 or a.chunk < 1 or a.clip_len < 1 or a.top < 1:
         sys.exit("--max-seconds must be 0 or more; --chunk, --clip-len and --top must be positive.")
-    if a.url and not a.test and not a.gameplay_confirmed:
+    if a.url and not a.test and not a.gameplay_confirmed and not a.recover_only:
         sys.exit("Live capture stopped: first inspect the source video and confirm actual GTA gameplay is visible. "
                  "Then rerun with --gameplay-confirmed. A GTA title or facecam alone is not gameplay.")
     if a.no_chat:
@@ -655,15 +793,42 @@ def main():
 
     if a.url:
         info = stream_info(a.url)
-        if not info.get("is_live") and not a.test:
+        if not info.get("is_live") and not a.test and not a.recover_only:
             sys.exit("The source is not live. Use --test for a local/non-live test input.")
         who = source_identity(info, a.test)
         title = info.get("title", "")
-    else:
+    elif a.file:
         who, title, info = source_identity({"uploader": "local source"}, True), os.path.basename(a.file), {}
+    else:
+        who, title, info = source_identity({"uploader": "recovered session"}, False), "recovered session", {}
+
     out_dir = os.path.abspath(a.output_dir) if a.output_dir else (TEST_OUT if who["test"] else OUTPUT_DIR)
     os.makedirs(out_dir, exist_ok=True)
-    wdir = os.path.join(WORK, datetime.now().strftime("%Y%m%d-%H%M%S"))
+    worker_id = a.worker_id or f"worker-{uuid.uuid4().hex[:8]}"
+
+    session = None
+    capture_id = None
+    if not a.no_session:
+        rec_dir = os.path.abspath(a.recordings_dir) if a.recordings_dir else os.path.join(HERE, "recordings")
+        if a.session_id:
+            sess_id = a.session_id
+        elif a.url and info.get("id"):
+            sess_id = recording_session_id(info.get("id"))
+        elif a.url:
+            sess_id = recording_session_id(a.url)
+        elif a.file:
+            sess_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"gta-auto-clipper:local-file:{os.path.abspath(a.file)}"))
+        else:
+            sess_id = str(uuid.uuid4())
+        session = RecordingSession(rec_dir, session_id=sess_id)
+        print(f"recording session: {session.session_id} in {session.path}")
+        recovered = session.recover_unregistered_chunks()
+        if recovered:
+            print(f"recovered {len(recovered)} unregistered chunk(s) from session storage")
+        pending = session.list_recoverable()
+        if pending:
+            print(f"found {len(pending)} pending/recoverable chunk(s) in session")
+
     print(f"source: {title!r} by {who['name']}  ->  {out_dir}")
     print(f"moment finder: {a.moment_source} (chat mode falls back to audio/speech when chat is unavailable)")
     chat = None
@@ -676,93 +841,98 @@ def main():
             chat_source = "audio-speech-fallback"
             print(f"live chat unavailable ({chat_fallback}); using audio/speech scoring")
     else:
-            chat_fallback = "disabled by test mode or audio-only mode"
+        chat_fallback = "disabled by test mode or audio-only mode"
+
+    if a.recover_only:
+        if not session:
+            sys.exit("--recover-only requires persistent session mode.")
+        outputs, count = run_recovery(
+            session, worker_id, out_dir, who, title, a.url or a.file or session.session_id,
+            clip_len=a.clip_len, top=a.top, min_score=a.min_score, lead_in=a.lead_in,
+            layout=a.layout, crop=a.crop, moment_source=a.moment_source,
+            gameplay_confirmed=a.gameplay_confirmed, chat=chat,
+            chat_source=chat_source, chat_fallback=chat_fallback,
+            n_clips_start=0,
+        )
+        print(f"recovery complete. Processed {count} chunk(s), created {len(outputs)} clip(s).")
+        return
+
+    if session:
+        capture = session.new_capture()
+        wdir = capture["path"]
+        capture_id = capture["id"]
+    else:
+        wdir = os.path.join(WORK, datetime.now().strftime("%Y%m%d-%H%M%S"))
+
     rec = start_recorder(a.url, a.file, a.chunk, a.max_seconds, wdir)
-    done, n_clips = set(), 0
+    registered, n_clips = set(), 0
     try:
         while True:
             chunks = sorted(glob.glob(os.path.join(wdir, "chunk_*.ts")))
             finished = chunks if rec.poll() is not None else chunks[:-1]
-            todo = [c for c in finished if c not in done]
-            if not todo:
-                if rec.poll() is not None:
-                    break
-                time.sleep(3)
-                continue
-            c = todo[0]; done.add(c)
-            print(f"analysing {os.path.basename(c)} ...")
-            chunk_length = media_duration(c)
-            chunk_end_epoch = os.path.getmtime(c)
-            chunk_start_epoch = chunk_end_epoch - chunk_length
-            absolute_chat = chat.messages_between(chunk_start_epoch, chunk_end_epoch) if chat else []
-            chunk_chat = [{"t": item["epoch"] - chunk_start_epoch,
-                           "user": item["user"], "text": item["text"]} for item in absolute_chat]
-            chunk_moment_source = a.moment_source
-            if chunk_moment_source in {"chat", "combined"} and not chunk_chat:
-                chunk_moment_source = "audio"
-                if a.moment_source == "chat" and chat:
-                    print("  no live chat messages for this chunk; using audio/speech instead")
-            moments, words = pick_moments(c, a.clip_len, a.top, a.min_score, a.lead_in,
-                                          chunk_chat, chunk_moment_source)
-            for score, start in moments:
-                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                name = f"gta-{stamp}-{n_clips + 1}"
-                mp4 = os.path.join(out_dir, name + ".mp4")
-                layout = "fill" if a.crop else a.layout
-                crop_offset, source_roi = detect_smart_frame(c, start, a.clip_len) if layout == "fill" else (0.5, None)
-                smart_crop = layout == "fill"
-                pan_keys = None
-                if smart_crop and source_roi is None:
-                    from player_track import track_player
-                    pan_keys = track_player(c, start, a.clip_len)
-                    if pan_keys is None:                  # driving / cutscene: the car sits mid-frame
-                        crop_offset = 0.5
-                caption_margin_v = caption_margin_for_video(c, crop=smart_crop, source_roi=None if smart_crop else source_roi)
-                if cut(c, words, start, a.clip_len, mp4, who.get("credit"), crop=smart_crop,
-                       crop_offset=crop_offset, source_roi=source_roi,
-                       caption_margin_v=caption_margin_v, layout=layout, pan_keys=pan_keys):
-                    n_clips += 1
-                    text = " ".join(w[2] for w in words if start <= w[0] < start + a.clip_len)
-                    chat_summary = summarize_chat_window(chunk_chat, start, a.clip_len)
-                    if chunk_moment_source == "chat":
-                        selection_signals = ["live-chat"]
-                    elif chunk_moment_source == "combined":
-                        selection_signals = ["audio", "speech", "live-chat"]
-                    else:
-                        selection_signals = ["audio", "speech"]
-                    with open(os.path.join(out_dir, name + ".json"), "w", encoding="utf-8") as meta:
-                        json.dump({
-                            "video": name + ".mp4", "channel": "gta", "source_url": a.url or a.file,
-                            "streamer": who["name"], "credit": who.get("credit"), "stream_title": title,
-                            "score": score, "transcript": text,
-                            "spoken_language": getattr(words, "spoken_language", "unknown"),
-                            "caption_language": getattr(words, "caption_language", "English"),
-                            "caption_fallback_reason": getattr(words, "caption_fallback_reason", None),
-                            "caption_position": "lower-third-of-visible-gameplay",
-                            "framing": "fill-9x16" if smart_crop else "full-source-blur-fill",
-                            "gameplay_confirmed": a.gameplay_confirmed,
-                            "moment_source_requested": a.moment_source,
-                            "moment_source_used": chunk_moment_source,
-                            "selection_signals": selection_signals,
-                            "live_chat_source": chat_source,
-                            "live_chat_status": chat.status if chat else "unavailable",
-                            "chat_fallback_reason": (chat.error if chat and chat.status == "unavailable" else chat_fallback) if not chat or chat.status == "unavailable" else None,
-                            "chat_message_count": chat_summary["message_count"],
-                            "unique_chatters": chat_summary["unique_chatters"],
-                            "reaction_chatters": chat_summary["reaction_chatters"],
-                            "crop_offset": crop_offset if smart_crop else None,
-                            "player_track": [[round(t, 2), round(x, 3)] for t, x in pan_keys] if pan_keys else None,
-                            "source_roi": list(source_roi) if source_roi else None,
-                            "title": None, "youtube_description": None,
-                            "instagram_caption": None, "hashtags": [], "post_at": None,
-                            "approved": False, "posted": {}, "test": who["test"],
-                        }, meta, indent=2, ensure_ascii=False)
-                    print(f"  clip {name}.mp4  score {score}")
+            if session:
+                for c in finished:
+                    if c not in registered:
+                        try:
+                            session.register_chunk(capture_id, c)
+                            registered.add(c)
+                        except ValueError:
+                            pass
+                claimed = session.claim_next(worker_id)
+                if not claimed:
+                    if rec.poll() is not None and not session.list_recoverable():
+                        break
+                    time.sleep(3)
+                    continue
+
+                outputs, count = process_chunk(
+                    session, claimed, worker_id, out_dir, who, title,
+                    a.url or a.file, clip_len=a.clip_len, top=a.top,
+                    min_score=a.min_score, lead_in=a.lead_in,
+                    layout=a.layout, crop=a.crop,
+                    moment_source=a.moment_source,
+                    gameplay_confirmed=a.gameplay_confirmed,
+                    chat=chat, chat_source=chat_source,
+                    chat_fallback=chat_fallback, n_clips_start=n_clips,
+                )
+                n_clips += count
+            else:
+                todo = [c for c in finished if c not in registered]
+                if not todo:
+                    if rec.poll() is not None:
+                        break
+                    time.sleep(3)
+                    continue
+                c = todo[0]; registered.add(c)
+                outputs, count = process_chunk(
+                    None, c, worker_id, out_dir, who, title,
+                    a.url or a.file, clip_len=a.clip_len, top=a.top,
+                    min_score=a.min_score, lead_in=a.lead_in,
+                    layout=a.layout, crop=a.crop,
+                    moment_source=a.moment_source,
+                    gameplay_confirmed=a.gameplay_confirmed,
+                    chat=chat, chat_source=chat_source,
+                    chat_fallback=chat_fallback, n_clips_start=n_clips,
+                )
+                n_clips += count
+
             for old in glob.glob(os.path.join(wdir, "chunk_*.ts")):
-                if old in done and time.time() - os.path.getmtime(old) > a.keep_minutes * 60:
-                    os.remove(old)
+                if time.time() - os.path.getmtime(old) > a.keep_minutes * 60:
+                    if session:
+                        rel = os.path.relpath(old, wdir).replace("\\", "/")
+                        ch = session.get_chunk_by_path(capture_id, rel)
+                        if ch and ch["status"] == "completed":
+                            try:
+                                os.remove(old)
+                            except OSError:
+                                pass
+                    elif old in registered:
+                        try:
+                            os.remove(old)
+                        except OSError:
+                            pass
             if chat:
-                chat.discard_before(chunk_end_epoch - 5)
+                chat.discard_before(time.time() - 30)
     except KeyboardInterrupt:
         print("stopping capture; finishing current work ...")
     finally:
@@ -775,7 +945,8 @@ def main():
             except subprocess.TimeoutExpired:
                 rec.kill()
                 rec.wait()
-        shutil.rmtree(wdir, ignore_errors=True)
+        if not session:
+            shutil.rmtree(wdir, ignore_errors=True)
     print(f"done. {n_clips} clip(s) in {out_dir}. Nothing posted.")
 
 

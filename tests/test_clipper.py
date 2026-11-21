@@ -14,7 +14,9 @@ from clip import (
     should_apply_smart_crop,
     source_identity, recording_session_id, select_clip_start,
     DEFAULT_MAX_SECONDS, pick_moments, mask_word, ytdlp_cmd,
+    process_chunk, run_recovery,
 )
+from recording_session import RecordingSession
 
 
 class ClipperReleaseTests(unittest.TestCase):
@@ -178,10 +180,6 @@ class PopCaptionTests(unittest.TestCase):
             self.assertLessEqual(len(visible), 24)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class SpokenLanguageLockTest(unittest.TestCase):
     def test_hindi_stream_locks_after_votes(self):
         import clip
@@ -201,3 +199,123 @@ class SpokenLanguageLockTest(unittest.TestCase):
         self.assertEqual(clip.locked_language(), "hi")
         clip._forced_language = None
         clip._lang_votes = {}
+
+
+class PersistentRecordingRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.temp = tempfile.TemporaryDirectory()
+        self.session_root = Path(self.temp.name) / "sessions"
+        self.out_dir = Path(self.temp.name) / "output"
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.session = RecordingSession(self.session_root)
+        self.capture = self.session.new_capture()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def _write_chunk(self, filename="chunk_00000.ts", content=b"video-chunk-data"):
+        path = Path(self.capture["path"]) / filename
+        path.write_bytes(content)
+        return path
+
+    def test_process_chunk_creates_clip_and_completes_in_session(self):
+        chunk_file = self._write_chunk("chunk_00000.ts")
+        chunk_row = self.session.register_chunk(self.capture["id"], chunk_file)
+        claimed = self.session.claim_next("worker-test")
+        self.assertIsNotNone(claimed)
+
+        def mock_cut(c, words, start, clip_len, mp4, credit, **kw):
+            Path(mp4).write_bytes(b"dummy-mp4")
+            return True
+
+        with patch("clip.media_duration", return_value=30.0), \
+             patch("clip.pick_moments", return_value=([(3.5, 5.0)], [])), \
+             patch("clip.detect_smart_frame", return_value=(0.5, None)), \
+             patch("clip.cut", side_effect=mock_cut):
+            outputs, count = process_chunk(
+                self.session, claimed, "worker-test", str(self.out_dir),
+                {"name": "StreamerX", "credit": "StreamerX", "test": True},
+                "Stream Title", "https://example.com/live",
+            )
+
+        self.assertEqual(count, 1)
+        self.assertEqual(len(outputs), 1)
+        video_path, meta_path = outputs[0]
+        self.assertTrue(Path(video_path).is_file())
+        self.assertTrue(Path(meta_path).is_file())
+
+        saved_chunk = self.session.get_chunk(chunk_row["id"])
+        self.assertEqual(saved_chunk["status"], "completed")
+
+        import json
+        with open(meta_path, encoding="utf-8") as f:
+            metadata = json.load(f)
+        self.assertEqual(metadata["streamer"], "StreamerX")
+        self.assertEqual(metadata["score"], 3.5)
+        self.assertTrue(metadata["test"])
+
+    def test_process_chunk_records_failure_on_exception(self):
+        chunk_file = self._write_chunk("chunk_00000.ts")
+        chunk_row = self.session.register_chunk(self.capture["id"], chunk_file)
+        claimed = self.session.claim_next("worker-test")
+
+        with patch("clip.media_duration", return_value=30.0), \
+             patch("clip.pick_moments", side_effect=RuntimeError("transcription exploded")):
+            with self.assertRaises(RuntimeError):
+                process_chunk(
+                    self.session, claimed, "worker-test", str(self.out_dir),
+                    {"name": "StreamerX"}, "Stream Title", "https://example.com/live",
+                )
+
+        saved = self.session.get_chunk(chunk_row["id"])
+        self.assertEqual(saved["status"], "pending")
+        self.assertIn("transcription exploded", saved["last_error"])
+
+    def test_process_chunk_handles_missing_file_gracefully(self):
+        chunk_file = self._write_chunk("chunk_00000.ts")
+        chunk_row = self.session.register_chunk(self.capture["id"], chunk_file)
+        claimed = self.session.claim_next("worker-test")
+        chunk_file.unlink()
+
+        outputs, count = process_chunk(
+            self.session, claimed, "worker-test", str(self.out_dir),
+            {"name": "StreamerX"}, "Stream Title", "https://example.com/live",
+        )
+        self.assertEqual(outputs, [])
+        self.assertEqual(count, 0)
+        saved = self.session.get_chunk(chunk_row["id"])
+        self.assertEqual(saved["status"], "pending")
+        self.assertIn("missing or empty", saved["last_error"])
+
+    def test_run_recovery_recovers_interrupted_chunks_and_preserves_completed(self):
+        c0 = self._write_chunk("chunk_00000.ts")
+        r0 = self.session.register_chunk(self.capture["id"], c0)
+        self.session.claim_next("worker-old")
+        self.session.complete_chunk(r0["id"], "worker-old", [])
+
+        c1 = self._write_chunk("chunk_00001.ts")
+        r1 = self.session.register_chunk(self.capture["id"], c1)
+
+        c2 = self._write_chunk("chunk_00002.ts")
+
+        with patch("clip.media_duration", return_value=30.0), \
+             patch("clip.pick_moments", return_value=([], [])):
+            all_outputs, processed_count = run_recovery(
+                self.session, "worker-recovery", str(self.out_dir),
+                {"name": "StreamerX", "test": True}, "Stream Title", "https://example.com/live",
+            )
+
+        self.assertEqual(processed_count, 2)
+        self.assertEqual(self.session.get_chunk(r0["id"])["status"], "completed")
+        self.assertEqual(self.session.get_chunk(r1["id"])["status"], "completed")
+
+        c2_rel = c2.name
+        c2_record = self.session.get_chunk_by_path(self.capture["id"], c2_rel)
+        self.assertIsNotNone(c2_record)
+        self.assertEqual(c2_record["status"], "completed")
+
+
+if __name__ == '__main__':
+    unittest.main()
+
