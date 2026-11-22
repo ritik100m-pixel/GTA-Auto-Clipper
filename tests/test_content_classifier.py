@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -69,6 +70,9 @@ class ContentClassifierTests(unittest.TestCase):
             state_path = Path(tmp) / "dedupe.json"
             first = ClipDeduplicator(state_path=state_path)
             first.register_clip(100.0, "a unique recorded clip transcript", clip_id="clip-a", source_id="UC-one")
+            serialized = state_path.read_text(encoding="utf-8")
+            self.assertNotIn("unique", serialized)
+            self.assertNotIn("transcript", serialized)
             reopened = ClipDeduplicator(state_path=state_path)
             is_dup, reason = reopened.is_duplicate(
                 105.0, "different words for the same clip", source_id="UC-one"
