@@ -715,7 +715,17 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                 print(f"  clip {name}.mp4  score {score}")
 
         if session is not None and chunk_id is not None:
-            session.complete_chunk(chunk_id, worker_id, outputs)
+            completed = session.complete_chunk(chunk_id, worker_id, outputs)
+            if not completed:
+                # Do not publish outputs from a chunk whose lease was lost.
+                # The raw chunk remains available for a later recovery attempt.
+                for video_path, metadata_path in outputs:
+                    for output_path in (video_path, metadata_path):
+                        try:
+                            Path(output_path).unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                raise RuntimeError("chunk lease expired before completion; outputs removed for safe recovery")
         return outputs, len(outputs)
     except Exception as exc:
         if session is not None and chunk_id is not None:
