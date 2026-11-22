@@ -69,6 +69,7 @@ jobs:
           path: |
             cloud_state/queue.sqlite3*
             cloud_state/analytics_ledger.json
+            cloud_state/dedupe_ledger.json
             recordings
           key: cloud-clipper-state-${{ github.run_id }}
           restore-keys: |
