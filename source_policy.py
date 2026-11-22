@@ -24,16 +24,20 @@ class SourcePolicy:
         self.load()
 
     def load(self):
-        if self.policy_path.is_file():
-            try:
-                with open(self.policy_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        self.sources = data.get("sources", {})
-            except (json.JSONDecodeError, OSError):
-                self.sources = {}
+        # A repository secret can supply the current source policy without
+        # committing creator permissions or proof references to the repo.
+        raw_policy = os.environ.get("GTA_SOURCE_ALLOWLIST_JSON", "").strip()
+        if raw_policy:
+            data = json.loads(raw_policy)
+        elif self.policy_path.is_file():
+            with open(self.policy_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         else:
-            self.sources = {}
+            data = {"sources": {}}
+
+        if not isinstance(data, dict) or not isinstance(data.get("sources", {}), dict):
+            raise ValueError("GTA source allowlist must be a JSON object with a 'sources' object")
+        self.sources = data.get("sources", {})
         return self
 
     def save(self):
@@ -53,7 +57,8 @@ class SourcePolicy:
                    permission_scope=None,
                    proof_reference=None,
                    credit=None,
-                   notes=None):
+                   notes=None,
+                   gameplay_verified=False):
         """Add or update an authorized source channel."""
         if not channel_id or not str(channel_id).strip():
             raise ValueError("channel_id is required")
@@ -69,6 +74,7 @@ class SourcePolicy:
             "channel_name": str(channel_name).strip(),
             "permission_status": str(permission_status).strip(),
             "permission_scope": scope,
+            "gameplay_verified": bool(gameplay_verified),
             "proof_reference": str(proof_reference or "").strip() or None,
             "credit": str(credit or channel_name).strip(),
             "notes": str(notes or "").strip() or None,
@@ -110,6 +116,10 @@ class SourcePolicy:
             return False
         status = entry.get("permission_status")
         if status not in {"authorized", "self_owned"}:
+            return False
+        # Creator permission alone does not establish that the source is GTA
+        # gameplay. Require an explicit one-time visual source review as well.
+        if entry.get("gameplay_verified") is not True:
             return False
         scopes = entry.get("permission_scope", [])
         if required_scope and required_scope not in scopes:
