@@ -4,8 +4,12 @@ Classifies gameplay clips into distinct GTA content categories (police chases,
 stunts, funny moments, fails, close escapes, etc.) and guards against
 duplicate or overlapping clips across chunks and recording sessions.
 """
+import json
+import os
 import re
+import tempfile
 from collections import Counter
+from pathlib import Path
 
 
 CATEGORIES = {
@@ -115,12 +119,16 @@ def classify_clip_content(transcript="", chat_messages=None, audio_spike=0.0, st
 
 
 class ClipDeduplicator:
-    """Detects and rejects duplicate or overlapping clips."""
+    """Detect duplicate clips in the same source and persist history between batches."""
 
-    def __init__(self, time_overlap_margin=15.0, transcript_similarity_threshold=0.70):
+    def __init__(self, time_overlap_margin=15.0, transcript_similarity_threshold=0.70,
+                 state_path=None, max_records=5000):
         self.time_overlap_margin = float(time_overlap_margin)
         self.transcript_similarity_threshold = float(transcript_similarity_threshold)
+        self.state_path = Path(state_path).resolve() if state_path else None
+        self.max_records = max(1, int(max_records))
         self.seen_clips = []
+        self.load()
 
     def _token_set(self, text):
         return set(_clean_tokens(text))
@@ -133,25 +141,76 @@ class ClipDeduplicator:
             return 0.0
         return len(set_a & set_b) / union
 
-    def is_duplicate(self, start_epoch, transcript=""):
+    def load(self):
+        if not self.state_path or not self.state_path.is_file():
+            return self
+        try:
+            with open(self.state_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            records = data.get("clips", []) if isinstance(data, dict) else []
+            self.seen_clips = [
+                {
+                    "start_epoch": row.get("start_epoch"),
+                    "tokens": set(row.get("tokens", [])),
+                    "clip_id": row.get("clip_id"),
+                    "source_id": row.get("source_id"),
+                }
+                for row in records[-self.max_records:]
+                if isinstance(row, dict)
+            ]
+        except (OSError, json.JSONDecodeError, TypeError):
+            # Corrupt state must not stop clipping; start with an empty ledger.
+            self.seen_clips = []
+        return self
+
+    def save(self):
+        if not self.state_path:
+            return
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": 1,
+            "clips": [
+                {
+                    "start_epoch": row.get("start_epoch"),
+                    "tokens": sorted(row.get("tokens", set())),
+                    "clip_id": row.get("clip_id"),
+                    "source_id": row.get("source_id"),
+                }
+                for row in self.seen_clips[-self.max_records:]
+            ],
+        }
+        with tempfile.NamedTemporaryFile(
+            "w", dir=self.state_path.parent, delete=False, encoding="utf-8"
+        ) as tf:
+            json.dump(payload, tf, indent=2, ensure_ascii=False)
+            temp_name = tf.name
+        os.replace(temp_name, self.state_path)
+
+    def is_duplicate(self, start_epoch, transcript="", source_id=None):
         tokens = self._token_set(transcript)
         for prev in self.seen_clips:
-            # Check 1: Temporal proximity in source stream
-            if start_epoch is not None and prev.get("start_epoch") is not None:
+            # Timestamp proximity is meaningful only within the same source.
+            same_source = source_id is None or prev.get("source_id") == source_id
+            if same_source and start_epoch is not None and prev.get("start_epoch") is not None:
                 if abs(float(start_epoch) - float(prev["start_epoch"])) < self.time_overlap_margin:
                     return True, "temporal_overlap"
 
-            # Check 2: High transcript word similarity
-            if len(tokens) >= 5 and len(prev.get("tokens", set())) >= 5:
-                sim = self._jaccard(tokens, prev["tokens"])
+            # Similar transcripts can identify reposted moments across sources.
+            prev_tokens = prev.get("tokens", set())
+            if len(tokens) >= 5 and len(prev_tokens) >= 5:
+                sim = self._jaccard(tokens, prev_tokens)
                 if sim >= self.transcript_similarity_threshold:
                     return True, f"transcript_similarity_{sim:.2f}"
 
         return False, None
 
-    def register_clip(self, start_epoch, transcript="", clip_id=None):
+    def register_clip(self, start_epoch, transcript="", clip_id=None, source_id=None):
         self.seen_clips.append({
             "start_epoch": float(start_epoch) if start_epoch is not None else None,
             "tokens": self._token_set(transcript),
             "clip_id": clip_id,
+            "source_id": source_id,
         })
+        if len(self.seen_clips) > self.max_records:
+            self.seen_clips = self.seen_clips[-self.max_records:]
+        self.save()
