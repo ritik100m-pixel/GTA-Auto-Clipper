@@ -79,6 +79,7 @@ class CloudBatchRunner:
                 job_key=job_key,
                 payload={
                     "url": stream["url"],
+                    "video_id": stream.get("video_id"),
                     "title": stream.get("title"),
                     "channel_id": stream.get("channel_id"),
                     "channel": stream.get("channel"),
@@ -138,7 +139,8 @@ class CloudBatchRunner:
                 self.queue.enqueue(
                     "capture_and_clip", job_key,
                     {
-                        "url": single_url, "title": info.get("title", "Direct Source"),
+                        "url": single_url, "video_id": info.get("id"),
+                        "title": info.get("title", "Direct Source"),
                         "channel_id": channel_id, "channel": identity.get("name"),
                         "credit": source.get("credit") or identity.get("credit"),
                         "gameplay_verified": True,
@@ -198,7 +200,7 @@ class CloudBatchRunner:
                 print(f"Claimed job {job_id} for stream: {url}")
                 try:
                     # Determine stable session
-                    sess_id = recording_session_id(channel_id or url)
+                    sess_id = recording_session_id(payload.get("video_id") or url)
                     session = RecordingSession(self.recordings_dir, session_id=sess_id)
 
                     # Recover any interrupted work
