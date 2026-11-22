@@ -298,12 +298,15 @@ class CloudBatchRunner:
                                 "gameplay_verified": True,
                                 "test": False,
                             }
+                            # Do not publish the Unlisted source URL in the public Short description
+                            # for a user-submitted owner-channel video.
+                            source_reference = None if payload.get("rights_confirmed_by_user") else url
                             for chunk_path in chunks:
                                 outputs, count = process_chunk(
                                     None, str(chunk_path), self.worker_id,
                                     str(self.output_dir), who,
                                     payload.get("title") or info.get("title", "YouTube video"),
-                                    url,
+                                    source_reference,
                                     clip_len=30, top=1, lead_in=6,
                                     layout="fill", moment_source="audio",
                                     gameplay_confirmed=True,
