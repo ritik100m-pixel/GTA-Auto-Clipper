@@ -14,7 +14,7 @@ This repository is public. GitHub documents standard GitHub-hosted runners as fr
 GitHub Actions schedule/manual run
         |
         v
-YouTube live-stream discovery
+YouTube live-stream discovery + configured creator uploads
         |
         v
 Explicit source allowlist
@@ -124,8 +124,8 @@ With no authorized source configured, a successful first run must not capture or
 ## Runtime, persistence, and storage
 
 - Standard GitHub-hosted Ubuntu runners are free for public repositories. Each job is limited to 6 hours; this workflow stops earlier.
-- The workflow caches only the queue database and a deduplication ledger containing one-way hashes of transcript tokens. The private source allowlist, raw recordings, readable transcripts, YouTube credentials, and analytics data are not cached or uploaded. Cache is best-effort storage and can be evicted; it is not a permanent database.
-- The scheduler currently uses default IST audience-hour priors and spreads clips apart within each batch. Importing actual YouTube Analytics performance data is a later enhancement, so it does not yet learn from channel metrics automatically.
+- The cloud workflow caches the queue database, one-way deduplication hashes, and the YouTube performance/scheduling ledgers. The private source allowlist, raw recordings, readable transcripts, and credentials are not cached or uploaded. The separate hourly analytics workflow uses the same performance-cache prefix. Cache is best-effort storage and can be evicted; it is not a permanent database.
+- The scheduler starts with neutral hour priors. The hourly YouTube Performance Snapshots workflow polls public view, like, and comment counts for videos scheduled by this system near 1h, 6h, 24h, and 48h after their scheduled publish time. The first available snapshot is stored with its actual capture timestamp. Only the 48-hour snapshot is currently used to train weekday/hour recommendations, so the analyser does not treat generic gaming peaks or early partial views as measured results. GitHub schedule delays can cause a milestone to be missed; missing snapshots are not fabricated. The metrics are public YouTube Data API statistics, not private impressions, click-through rate, watch-time, or audience-retention reports. Instagram Reels analytics are not included.
 - Raw recordings and recording-session databases are temporary within one runner job. Completed raw chunks are deleted after their MP4 and metadata outputs are saved. If a runner stops before a chunk is processed, that raw chunk is not carried into the next workflow run; a later batch must rediscover and recapture it.
 - Clip artifacts are disabled by default because anyone with read access to this public repository can download them. You can opt in with the manual `upload_output_artifact` input or repository variable `GTA_UPLOAD_OUTPUT_ARTIFACTS=true`. Before upload, the workflow checks that every clip has active `publish` permission in the private source allowlist; test clips and unapproved sources are rejected. Opt-in artifacts expire after 1 day. GitHub Free has a 500 MB artifact-storage allowance and a 10 GB cache limit.
 - The workflow runs twice daily, not continuously. It can miss a livestream that starts and ends between scheduled runs. The 10-clip target is a goal, not a guarantee; source availability, clip quality, processing speed, API quotas, and platform limits can reduce the daily count.
@@ -144,7 +144,7 @@ The repository's GitHub Actions test workflow covers:
 - Clipper framing, captions, and moment selection
 - Live-chat fallback and reaction scoring
 - Source allowlist and permission gates
-- Content classification and scheduling
+- Content classification and measured posting-time scheduling\n- Configured creator uploads discovery and public performance snapshots
 - YouTube publisher dry-run and duplicate protection
 - Cloud batch orchestration and publishing opt-in
 
