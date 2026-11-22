@@ -758,6 +758,7 @@ def run_recovery(session, worker_id, out_dir, who, title, source_url,
     """Recover and process all pending or abandoned chunks in a persistent session."""
     session.recover_unregistered_chunks()
     all_outputs = []
+    processed_count = 0
     while True:
         claimed = session.claim_next(worker_id)
         if not claimed:
@@ -772,8 +773,8 @@ def run_recovery(session, worker_id, out_dir, who, title, source_url,
             deduplicator=deduplicator,
         )
         all_outputs.extend(outputs)
-    # The caller uses this value to enforce a clip target, not a chunk target.
-    return all_outputs, len(all_outputs)
+        processed_count += 1
+    return all_outputs, processed_count
 
 
 # ---------- main loop ----------
