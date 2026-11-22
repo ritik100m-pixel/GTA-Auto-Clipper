@@ -50,7 +50,8 @@ class YouTubePublisherTests(unittest.TestCase):
 
         with open(self.meta_path, "r", encoding="utf-8") as f:
             saved = json.load(f)
-        self.assertEqual(saved["youtube_video_id"], res["id"])
+        self.assertNotIn("youtube_video_id", saved)
+        self.assertNotIn("youtube_publish_status", saved)
 
     def test_duplicate_upload_prevention(self):
         # Once a video ID is written to metadata, re-publishing must raise ValueError
