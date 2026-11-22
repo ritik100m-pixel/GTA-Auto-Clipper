@@ -25,7 +25,10 @@ class CloudBatchRunnerTests(unittest.TestCase):
 
     def test_discovery_and_enqueue_authorized_streams(self):
         # Allowlist one channel
-        self.runner.policy.add_source("UC-auth-1", "AuthChannel", gameplay_verified=True)
+        self.runner.policy.add_source(
+            "UC-auth-1", "AuthChannel", permission_status="authorized",
+            proof_reference="Permission email", gameplay_verified=True,
+        )
 
         mock_streams = [
             {"channel_id": "UC-auth-1", "channel": "AuthChannel", "url": "https://youtube.com/watch?v=aaa111", "title": "GTA Stream 1"},
@@ -40,7 +43,10 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertTrue(enqueued[0]["authorized"])
 
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
-        self.runner.policy.add_source("UC-auth-1", "AuthChannel", gameplay_verified=True)
+        self.runner.policy.add_source(
+            "UC-auth-1", "AuthChannel", permission_status="authorized",
+            proof_reference="Permission email", gameplay_verified=True,
+        )
         # Create a dummy clip output in output_dir
         dummy_mp4 = self.output_dir / "clip_001.mp4"
         dummy_json = self.output_dir / "clip_001.json"
@@ -90,7 +96,10 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "approved": True,
             "source_channel_id": "UC-auth-2",
         }), encoding="utf-8")
-        self.runner.policy.add_source("UC-auth-2", "AuthChannel", gameplay_verified=True)
+        self.runner.policy.add_source(
+            "UC-auth-2", "AuthChannel", permission_status="authorized",
+            proof_reference="Permission email", gameplay_verified=True,
+        )
         self.runner.queue.enqueue(
             "capture_and_clip", "stream-job-2",
             {"url": "https://example.com/live", "channel_id": "UC-auth-2",
