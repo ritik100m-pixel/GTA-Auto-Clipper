@@ -123,3 +123,40 @@ def find_channel_videos(channels, api_key, *, recent_days=14, max_per_channel=5,
         per_channel[item["channel_id"]] = count + 1
         limited.append(item)
     return limited
+
+
+
+def find_channel_live_streams(channels, api_key, *, max_per_channel=3):
+    """Discover currently-live broadcasts directly from configured channels.
+
+    YouTube search.list is quota-expensive (100 units per channel query), so
+    keep the per-channel result cap small and call only for authorized sources.
+    """
+    results = []
+    for source in channels:
+        channel_id = str(source.get("channel_id") or "").strip()
+        if not channel_id:
+            continue
+        payload = _get("search", {
+            "part": "snippet",
+            "channelId": channel_id,
+            "eventType": "live",
+            "type": "video",
+            "maxResults": min(5, max(1, int(max_per_channel))),
+            "key": api_key,
+        })
+        for item in payload.get("items", []):
+            video_id = item.get("id", {}).get("videoId")
+            snippet = item.get("snippet", {})
+            if not video_id:
+                continue
+            results.append({
+                "video_id": video_id,
+                "channel_id": channel_id,
+                "channel": snippet.get("channelTitle") or source.get("channel_name", ""),
+                "title": snippet.get("title", ""),
+                "published_at": snippet.get("publishedAt"),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "source_type": "youtube_live",
+            })
+    return results
