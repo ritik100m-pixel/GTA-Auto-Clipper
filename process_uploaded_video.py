@@ -10,6 +10,7 @@ import sys
 
 from clip import stream_info
 from cloud_runner import CloudBatchRunner
+from vod_processor import _validate_youtube_url
 
 MAX_VIDEO_SECONDS = 90 * 60
 MAX_TARGET_CLIPS = 20
@@ -47,6 +48,7 @@ def process_uploaded_video(
     if unattended and os.environ.get("GTA_UNATTENDED_POSTS") != "1":
         raise PermissionError("Unattended publishing requires GTA_UNATTENDED_POSTS=1.")
 
+    _validate_youtube_url(url)
     info = info_reader(url)
     video_id = str(info.get("id") or "").strip()
     channel_id = str(info.get("channel_id") or "").strip()
