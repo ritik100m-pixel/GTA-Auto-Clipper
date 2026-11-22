@@ -16,12 +16,9 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # Baseline viewing priors for GTA gaming audience (IST local hour: prior weight)
 # Peak gaming engagement occurs in early evening and night hours.
-DEFAULT_HOUR_PRIORS = {
-    0: 0.7, 1: 0.4, 2: 0.2, 3: 0.1, 4: 0.1, 5: 0.2,
-    6: 0.3, 7: 0.4, 8: 0.5, 9: 0.6, 10: 0.7, 11: 0.8,
-    12: 1.0, 13: 1.1, 14: 1.0, 15: 1.1, 16: 1.2, 17: 1.5,
-    18: 1.8, 19: 2.0, 20: 2.0, 21: 1.9, 22: 1.6, 23: 1.1,
-}
+# Cold-start slots are deliberately neutral. Only measured channel results
+# should create a preferred hour or weekday; no generic audience peak is assumed.
+DEFAULT_HOUR_PRIORS = {hour: 1.0 for hour in range(24)}
 
 
 def _utc_now():
@@ -138,10 +135,6 @@ class SmartScheduler:
         hour = local_dt.hour
 
         prior = DEFAULT_HOUR_PRIORS.get(hour, 1.0)
-        # Weekend boost (Saturday=5, Sunday=6)
-        if day in (5, 6):
-            prior *= 1.25
-
         if slots is None or cat_slots is None:
             slots, cat_slots = self.get_slot_stats()
 

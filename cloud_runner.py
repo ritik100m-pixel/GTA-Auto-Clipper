@@ -21,6 +21,8 @@ from pathlib import Path
 from cloud_queue import CloudQueue
 from source_policy import SourcePolicy
 from smart_scheduler import SmartScheduler
+from find_channel_videos import find_channel_videos, find_channel_live_streams
+from performance_tracker import VideoPerformanceLedger, collect_due_snapshots, feed_scheduler_from_48h
 from publisher import UnifiedPublisher
 from content_classifier import classify_clip_content, ClipDeduplicator
 from clip import (
@@ -47,12 +49,13 @@ class CloudBatchRunner:
         self.queue = CloudQueue(self.state_dir / "queue.sqlite3")
         self.policy = SourcePolicy(self.state_dir / "source_allowlist.json")
         self.scheduler = SmartScheduler(ledger_path=str(self.state_dir / "analytics_ledger.json"))
+        self.performance_ledger = VideoPerformanceLedger(self.state_dir / "video_performance.json")
         self.publisher = UnifiedPublisher()
         self.deduplicator = ClipDeduplicator(state_path=self.state_dir / "dedupe_ledger.json")
 
         self.worker_id = f"worker-cloud-{uuid.uuid4().hex[:8]}"
 
-    def run_discovery_and_enqueue(self, query="GTA 6 gameplay", max_results=10, api_key=None):
+    def run_discovery_and_enqueue(self, query="GTA 6 gameplay", max_results=10, api_key=None, include_creator_live=True):
         """Find streams, enforce copyright allowlist, and enqueue authorized streams."""
         key = api_key or os.environ.get("YOUTUBE_API_KEY")
         if not key:
@@ -63,13 +66,27 @@ class CloudBatchRunner:
         try:
             candidates = find_streams(query, key, limit=max_results)
         except Exception as exc:
-            print(f"Stream search encountered error: {exc}")
-            return []
+            print(f"Stream search encountered error: {type(exc).__name__}: {exc}")
+            candidates = []
+
+        configured = [
+            source for source in self.policy.list_sources()
+            if self.policy.is_authorized(source.get("channel_id"), "record")
+            and self.policy.is_authorized(source.get("channel_id"), "clip")
+        ]
+        creator_lives = []
+        if include_creator_live:
+            try:
+                creator_lives = find_channel_live_streams(configured, key, max_per_channel=3)
+            except Exception as exc:
+                print(f"Configured-channel live discovery encountered error: {type(exc).__name__}: {exc}")
+        known_urls = {item.get("url") for item in candidates}
+        candidates.extend(item for item in creator_lives if item.get("url") not in known_urls)
 
         authorized, unauthorized = self.policy.filter_streams(candidates, required_scope="record")
         authorized, missing_clip_scope = self.policy.filter_streams(authorized, required_scope="clip")
         unauthorized.extend(missing_clip_scope)
-        print(f"Discovery found {len(candidates)} streams: {len(authorized)} authorized for recording and clipping, {len(unauthorized)} skipped.")
+        print(f"Discovery found {len(candidates)} live streams: {len(authorized)} authorized for recording and clipping, {len(unauthorized)} skipped.")
 
         enqueued_jobs = []
         for stream in authorized:
@@ -85,12 +102,41 @@ class CloudBatchRunner:
                     "channel": stream.get("channel"),
                     "credit": stream.get("source_record", {}).get("credit") or stream.get("channel"),
                     "gameplay_verified": True,
+                    "source_type": "youtube_live",
                 },
                 authorized=True,
                 max_attempts=3,
             )
             enqueued_jobs.append(job)
 
+        # Also inspect public uploads playlists for explicitly configured sources.
+        try:
+            videos = find_channel_videos(configured, key, recent_days=14, max_per_channel=5)
+        except Exception as exc:
+            print(f"Regular-video discovery encountered error: {type(exc).__name__}: {exc}")
+            videos = []
+        for video in videos:
+            source = self.policy.get_source(video["channel_id"]) or {}
+            job = self.queue.enqueue(
+                job_type="capture_and_clip",
+                job_key=f"youtube-video:{video['channel_id']}:{video['video_id']}",
+                payload={
+                    "url": video["url"],
+                    "video_id": video["video_id"],
+                    "title": video.get("title"),
+                    "channel_id": video["channel_id"],
+                    "channel": video.get("channel"),
+                    "credit": source.get("credit") or video.get("channel"),
+                    "gameplay_verified": True,
+                    "source_type": "youtube_video",
+                    "published_at": video.get("published_at"),
+                },
+                authorized=True,
+                max_attempts=3,
+            )
+            enqueued_jobs.append(job)
+
+        print(f"Regular-video discovery found {len(videos)} recent uploads from configured creators.")
         return enqueued_jobs
 
     def run_batch(self, max_duration_seconds=21600, target_clips=10,
@@ -119,6 +165,17 @@ class CloudBatchRunner:
         }
 
         try:
+            # Collect public performance snapshots after 1h, 6h, 24h and 48h.
+            api_key = os.environ.get("YOUTUBE_API_KEY")
+            snapshot_stats = collect_due_snapshots(self.performance_ledger, api_key)
+            imported = feed_scheduler_from_48h(self.performance_ledger, self.scheduler.ledger)
+            print(
+                f"Performance analyser: {snapshot_stats['recorded']} snapshot(s) recorded; "
+                f"{imported} 48-hour result(s) added to posting-time learning."
+            )
+            if snapshot_stats.get("error"):
+                print(f"Performance snapshot warning: {snapshot_stats['error']}")
+
             # Step 1: If direct URL provided or fallback discovery
             if single_url:
                 info = stream_info(single_url)
@@ -164,7 +221,7 @@ class CloudBatchRunner:
                     now = time.time()
                     if now >= next_discovery_at:
                         print("Queue is idle; searching again for newly started live streams.")
-                        self.run_discovery_and_enqueue(api_key=api_key)
+                        self.run_discovery_and_enqueue(api_key=api_key, include_creator_live=False)
                         next_discovery_at = time.time() + 15 * 60
                         continue
 
@@ -332,7 +389,14 @@ class CloudBatchRunner:
                             print(f"Dry-run preview for {meta_path.name}: would schedule at {scheduled_time}")
                         else:
                             stats["clips_published"] += 1
-                            print(f"Scheduled clip {meta_path.name} for {scheduled_time} ({rec_slot['strategy']})")
+                            published_result = pub_res.get("result", {}) if isinstance(pub_res, dict) else {}
+                            video_id = published_result.get("id") if isinstance(published_result, dict) else None
+                            if video_id:
+                                self.performance_ledger.register(video_id, scheduled_time, cat)
+                            print(
+                                f"Scheduled clip {meta_path.name} for {scheduled_time} "
+                                f"({rec_slot['strategy']}; {rec_slot['slot_samples']} historical sample(s))"
+                            )
                     except Exception as exc:
                         err = f"Failed to schedule clip {meta_path.name}: {exc}"
                         print(err)
