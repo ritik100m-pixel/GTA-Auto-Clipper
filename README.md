@@ -18,6 +18,12 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 - Saves MP4 and JSON metadata in `output/`. It never posts as part of clipping.
 - Schedules reviewed clips through Zernio by default. Optional unattended scheduling is available after account setup and with a standing source-rights policy; dry-run is the default.
 
+## Cloud automation
+
+The repository includes a GitHub Actions cloud workflow that can discover authorized live sources, capture and process clips, and optionally schedule YouTube Shorts while your PC is off. It runs in bounded batches, not continuously. The default is fail-closed: no source channels are configured, capture is blocked until a source has explicit recording/clipping permission and a gameplay review, and publishing is disabled/dry-run by default.
+
+See [docs/CLOUD-ARCHITECTURE.md](docs/CLOUD-ARCHITECTURE.md) for the setup steps, required GitHub Secrets/Variables, source-policy format, storage limits, and safe publishing switches. Do not add creator channels until you have permission to record, edit, and publish their footage.
+
 ## Install
 
 Requirements: Python 3.10+, FFmpeg in PATH, Node.js or Deno (yt-dlp needs a JavaScript runtime to read YouTube; the clipper uses Node automatically when Deno is missing), OpenCV for `--crop` face detection, and a stable connection for first-run speech-model downloads.
