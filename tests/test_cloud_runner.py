@@ -46,7 +46,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertTrue(enqueued[0]["authorized"])
         self.assertEqual(enqueued[0]["payload"]["video_id"], "aaa111")
 
-    def test_discovery_enqueues_authorized_regular_videos(self):
+    def test_discovery_reports_vods_without_enqueuing_them(self):
         self.runner.policy.add_source(
             "UC-vod", "VideoCreator", permission_status="authorized",
             permission_scope=["record", "clip"],
@@ -59,14 +59,12 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "published_at": "2026-11-22T10:00:00+00:00",
             "source_type": "youtube_video",
         }
-        with patch("find_streams.find_streams", return_value=[]), \
-             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
+        with patch("find_streams.find_streams", return_value=[]), \\
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \\
              patch("cloud_runner.find_channel_videos", return_value=[video]):
             jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
-        self.assertEqual(len(jobs), 1)
-        self.assertEqual(jobs[0]["job_key"], "youtube-video:UC-vod:vod123")
-        self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_video")
-        self.assertTrue(jobs[0]["authorized"])
+        self.assertEqual(jobs, [])
+        self.assertIsNone(self.runner.queue.claim_next("test-worker"))
 
     def test_discovery_enqueues_configured_creator_livestream(self):
         self.runner.policy.add_source(
