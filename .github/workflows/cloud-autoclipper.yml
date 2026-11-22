@@ -96,6 +96,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # This repository is public; never expose an Unlisted source URL in workflow logs.
+          echo "::add-mask::$INPUT_VIDEO_URL"
 
           [[ -n "$INPUT_VIDEO_URL" ]] || { echo "A video URL is required."; exit 2; }
           [[ "$INPUT_CONFIRM_RIGHTS" == "true" ]] || {
