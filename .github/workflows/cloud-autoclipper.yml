@@ -120,7 +120,7 @@ jobs:
           name: generated-clips-${{ github.run_number }}
           path: output/
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 1
 
       - name: Upload cloud state snapshot
         if: always()
@@ -129,4 +129,4 @@ jobs:
           name: cloud-state-${{ github.run_number }}
           path: cloud_state/
           if-no-files-found: ignore
-          retention-days: 30
+          retention-days: 7
