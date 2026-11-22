@@ -100,6 +100,7 @@ Add these under **Repository Settings → Secrets and variables → Actions → 
 |---|---|---|
 | `GTA_ENABLE_PUBLISHING` | `false` | Allows scheduled workflow runs to publish eligible clips |
 | `GTA_DRY_RUN` | `true` | Keeps scheduled runs in preview mode until deliberately changed |
+| `GTA_UPLOAD_OUTPUT_ARTIFACTS` | `false` | Opts into public downloadable clip artifacts; leave false unless every clip is cleared for public access |
 
 For scheduled unattended YouTube publishing, all of the following must be deliberately configured:
 1. A valid `GTA_SOURCE_ALLOWLIST_JSON` with record, clip, and publish permission for each source.
@@ -123,10 +124,10 @@ With no authorized source configured, a successful first run is expected to repo
 ## Runtime, persistence, and storage
 
 - Standard GitHub-hosted Ubuntu runners are free for public repositories. Each job is limited to 6 hours; this workflow stops earlier.
-- The workflow uses GitHub Actions cache for the queue database, scheduling ledger, deduplication ledger, and recording recovery. The private source allowlist is excluded from cache and artifacts. Cache is best-effort storage and can be evicted; it is not a permanent database.
+- The workflow caches only the queue database and a deduplication ledger containing one-way hashes of transcript tokens. The private source allowlist, raw recordings, readable transcripts, YouTube credentials, and analytics data are not cached or uploaded. Cache is best-effort storage and can be evicted; it is not a permanent database.
 - The scheduler currently uses default IST audience-hour priors and spreads clips apart within each batch. Importing actual YouTube Analytics performance data is a later enhancement, so it does not yet learn from channel metrics automatically.
-- Completed raw transport-stream chunks are deleted after their MP4 and metadata outputs are successfully saved. Incomplete chunks are retained for recovery.
-- Generated clips are uploaded as a GitHub Actions artifact for 1 day. The state snapshot is retained for 7 days. GitHub Free has a 500 MB artifact-storage allowance and a 10 GB cache limit, so output volume and retention must stay bounded.
+- Raw recordings and recording-session databases are temporary within one runner job. Completed raw chunks are deleted after their MP4 and metadata outputs are saved. If a runner stops before a chunk is processed, that raw chunk is not carried into the next workflow run; a later batch must rediscover and recapture it.
+- Clip artifacts are disabled by default because anyone with read access to this public repository can download them. You can opt in with the manual `upload_output_artifact` input or repository variable `GTA_UPLOAD_OUTPUT_ARTIFACTS=true`, but only do so when every generated clip is cleared for public access. Opt-in artifacts expire after 1 day. GitHub Free has a 500 MB artifact-storage allowance and a 10 GB cache limit.
 - The workflow runs twice daily, not continuously. It can miss a livestream that starts and ends between scheduled runs. The 10-clip target is a goal, not a guarantee; source availability, clip quality, processing speed, API quotas, and platform limits can reduce the daily count.
 
 ## Publishing scope
