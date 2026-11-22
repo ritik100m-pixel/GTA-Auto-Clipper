@@ -225,7 +225,17 @@ class RecordingSession:
                   AND lease_expires_at > ?
             """, (json.dumps(validated_outputs), now,
                   chunk_id, worker_id, now)).rowcount
-            return changed == 1
+
+        completed = changed == 1
+        if completed:
+            # Rendered MP4/JSON outputs are now durable in the output directory.
+            # Drop the large raw transport-stream chunk to keep GitHub cache usage
+            # bounded. If completion failed, retain the chunk for recovery.
+            try:
+                self.resolve_chunk_path(chunk_id).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return completed
     def fail_chunk(self, chunk_id, worker_id, error):
         now = _stamp()
         with self._db() as db:
