@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from source_policy import SourcePolicy
 
@@ -34,6 +35,14 @@ class SourcePolicyTests(unittest.TestCase):
     def test_creator_permission_without_gameplay_review_is_not_enough(self):
         self.policy.add_source("UC-not-reviewed", "NotReviewed")
         self.assertFalse(self.policy.is_authorized("UC-not-reviewed", "record"))
+
+    def test_environment_allowlist_overrides_local_file(self):
+        self.policy.add_source("UC-local", "LocalSource", gameplay_verified=True)
+        payload = '{"sources":{"UC-env":{"channel_id":"UC-env","channel_name":"EnvSource","permission_status":"authorized","permission_scope":["record","clip"],"gameplay_verified":true}}}'
+        with patch.dict("os.environ", {"GTA_SOURCE_ALLOWLIST_JSON": payload}):
+            env_policy = SourcePolicy(self.policy_file)
+        self.assertTrue(env_policy.is_authorized("UC-env", "record"))
+        self.assertFalse(env_policy.is_authorized("UC-local", "record"))
 
     def test_unauthorized_when_status_is_revoked_or_pending(self):
         self.policy.add_source(
