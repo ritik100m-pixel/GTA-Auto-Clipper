@@ -21,6 +21,8 @@ from pathlib import Path
 from cloud_queue import CloudQueue
 from source_policy import SourcePolicy
 from smart_scheduler import SmartScheduler
+from find_channel_videos import find_channel_videos
+from performance_tracker import VideoPerformanceLedger, collect_due_snapshots, feed_scheduler_from_48h
 from publisher import UnifiedPublisher
 from content_classifier import classify_clip_content, ClipDeduplicator
 from clip import (
@@ -47,6 +49,7 @@ class CloudBatchRunner:
         self.queue = CloudQueue(self.state_dir / "queue.sqlite3")
         self.policy = SourcePolicy(self.state_dir / "source_allowlist.json")
         self.scheduler = SmartScheduler(ledger_path=str(self.state_dir / "analytics_ledger.json"))
+        self.performance_ledger = VideoPerformanceLedger(self.state_dir / "video_performance.json")
         self.publisher = UnifiedPublisher()
         self.deduplicator = ClipDeduplicator(state_path=self.state_dir / "dedupe_ledger.json")
 
@@ -85,12 +88,46 @@ class CloudBatchRunner:
                     "channel": stream.get("channel"),
                     "credit": stream.get("source_record", {}).get("credit") or stream.get("channel"),
                     "gameplay_verified": True,
+                    "source_type": "youtube_live",
                 },
                 authorized=True,
                 max_attempts=3,
             )
             enqueued_jobs.append(job)
 
+        # Also inspect public uploads playlists for explicitly configured sources.
+        configured = [
+            source for source in self.policy.list_sources()
+            if self.policy.is_authorized(source.get("channel_id"), "record")
+            and self.policy.is_authorized(source.get("channel_id"), "clip")
+        ]
+        try:
+            videos = find_channel_videos(configured, key, recent_days=14, max_per_channel=5)
+        except Exception as exc:
+            print(f"Regular-video discovery encountered error: {type(exc).__name__}: {exc}")
+            videos = []
+        for video in videos:
+            source = self.policy.get_source(video["channel_id"]) or {}
+            job = self.queue.enqueue(
+                job_type="capture_and_clip",
+                job_key=f"youtube-video:{video['channel_id']}:{video['video_id']}",
+                payload={
+                    "url": video["url"],
+                    "video_id": video["video_id"],
+                    "title": video.get("title"),
+                    "channel_id": video["channel_id"],
+                    "channel": video.get("channel"),
+                    "credit": source.get("credit") or video.get("channel"),
+                    "gameplay_verified": True,
+                    "source_type": "youtube_video",
+                    "published_at": video.get("published_at"),
+                },
+                authorized=True,
+                max_attempts=3,
+            )
+            enqueued_jobs.append(job)
+
+        print(f"Regular-video discovery found {len(videos)} recent uploads from configured creators.")
         return enqueued_jobs
 
     def run_batch(self, max_duration_seconds=21600, target_clips=10,
@@ -119,6 +156,17 @@ class CloudBatchRunner:
         }
 
         try:
+            # Collect public performance snapshots after 1h, 6h, 24h and 48h.
+            api_key = os.environ.get("YOUTUBE_API_KEY")
+            snapshot_stats = collect_due_snapshots(self.performance_ledger, api_key)
+            imported = feed_scheduler_from_48h(self.performance_ledger, self.scheduler.ledger)
+            print(
+                f"Performance analyser: {snapshot_stats['recorded']} snapshot(s) recorded; "
+                f"{imported} 48-hour result(s) added to posting-time learning."
+            )
+            if snapshot_stats.get("error"):
+                print(f"Performance snapshot warning: {snapshot_stats['error']}")
+
             # Step 1: If direct URL provided or fallback discovery
             if single_url:
                 info = stream_info(single_url)
@@ -332,7 +380,12 @@ class CloudBatchRunner:
                             print(f"Dry-run preview for {meta_path.name}: would schedule at {scheduled_time}")
                         else:
                             stats["clips_published"] += 1
-                            print(f"Scheduled clip {meta_path.name} for {scheduled_time} ({rec_slot['strategy']})")
+                            if pub_res.get("id"):
+                                self.performance_ledger.register(pub_res["id"], scheduled_time, cat)
+                            print(
+                                f"Scheduled clip {meta_path.name} for {scheduled_time} "
+                                f"({rec_slot['strategy']}; {rec_slot['slot_samples']} historical sample(s))"
+                            )
                     except Exception as exc:
                         err = f"Failed to schedule clip {meta_path.name}: {exc}"
                         print(err)
