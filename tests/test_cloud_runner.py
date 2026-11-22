@@ -37,6 +37,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         ]
 
         with patch("find_streams.find_streams", return_value=mock_streams), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
              patch("cloud_runner.find_channel_videos", return_value=[]):
             enqueued = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
 
@@ -59,6 +60,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "source_type": "youtube_video",
         }
         with patch("find_streams.find_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
              patch("cloud_runner.find_channel_videos", return_value=[video]):
             jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
         self.assertEqual(len(jobs), 1)
@@ -66,6 +68,24 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_video")
         self.assertTrue(jobs[0]["authorized"])
 
+    def test_discovery_enqueues_configured_creator_livestream(self):
+        self.runner.policy.add_source(
+            "UC-live", "LiveCreator", permission_status="authorized",
+            permission_scope=["record", "clip"], proof_reference="Permission",
+            gameplay_verified=True,
+        )
+        stream = {
+            "video_id": "live123", "channel_id": "UC-live", "channel": "LiveCreator",
+            "title": "Live GTA", "url": "https://www.youtube.com/watch?v=live123",
+            "source_type": "youtube_live",
+        }
+        with patch("find_streams.find_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[stream]), \
+             patch("cloud_runner.find_channel_videos", return_value=[]):
+            jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["job_key"], "youtube-live:UC-live:https://www.youtube.com/watch?v=live123")
+        self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_live")
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
         self.runner.policy.add_source(
             "UC-auth-1", "AuthChannel", permission_status="authorized",
