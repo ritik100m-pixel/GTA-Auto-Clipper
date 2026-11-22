@@ -202,7 +202,7 @@ class CloudBatchRunner:
                     stats["clips_generated"] += rec_count
 
                     # If time remains, capture more chunks (e.g. up to remaining time)
-                    remaining = max_duration_seconds - (time.time() - start_time)
+                    remaining = max(0, work_deadline - time.time())
                     if remaining > 600 and stats["clips_generated"] < target_clips:
                         capture = session.new_capture()
                         wdir = capture["path"]
