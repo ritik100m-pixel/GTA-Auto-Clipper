@@ -151,6 +151,7 @@ jobs:
           python - <<'PY'
           import glob
           import json
+          import os
           from source_policy import SourcePolicy
 
           policy = SourcePolicy()
