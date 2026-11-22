@@ -1,6 +1,6 @@
 # GTA Auto Clipper
 
-Find high-energy moments in live gameplay and render full-screen 9:16 clips with pop-up captions: each word pops in yellow the moment it is spoken. The clipper runs on your computer. A separate Zernio command can schedule the finished clip to your connected YouTube and Instagram accounts.
+Turn one gameplay video into vertical YouTube Shorts in the cloud. The primary workflow accepts an Unlisted YouTube video from your own channel, finds strong moments, renders 9:16 clips with captions, and can schedule them to YouTube. Temporary source and clip files are deleted after each run. See [docs/DAILY-GAMEPLAY-WORKFLOW.md](docs/DAILY-GAMEPLAY-WORKFLOW.md) for setup.
 
 The software is free and MIT-licensed. The optional AI workflow guide and prompt pack are a separate digital product.
 
@@ -21,7 +21,7 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 
 ## Cloud automation
 
-The repository includes a GitHub Actions cloud workflow that can discover authorized livestreams and recent regular uploads from configured creators, capture/process eligible footage, and optionally schedule YouTube Shorts while your PC is off. A separate hourly workflow records public view/like/comment snapshots for videos uploaded by this system. It runs in bounded batches, not continuously. The default is fail-closed: no source channels are configured, capture is blocked until a source has explicit recording/clipping permission and a gameplay review, and publishing is disabled/dry-run by default.
+The primary GitHub Actions workflow processes one user-submitted gameplay video per manual run while your PC is off. The older live-stream discovery and creator-allowlist code remains in the repository but is no longer started by a scheduled workflow. A separate hourly workflow records public view/like/comment snapshots for videos uploaded by this system. It runs in bounded batches, not continuously. The default is fail-closed: no source channels are configured, capture is blocked until a source has explicit recording/clipping permission and a gameplay review, and publishing is disabled/dry-run by default.
 
 The posting-time analyser records public performance snapshots around 1h, 6h, 24h, and 48h after scheduling. The scheduler learns from actual 48-hour results and starts with neutral time-slot assumptions; it does not claim a best time before it has evidence. Snapshot timing is best-effort because GitHub schedules can be delayed and cache storage can be evicted. This is YouTube Data API public statistics, not private audience-retention/impressions analytics. Instagram Reels analytics are not implemented.
 
