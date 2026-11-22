@@ -27,6 +27,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         # Allowlist one channel
         self.runner.policy.add_source(
             "UC-auth-1", "AuthChannel", permission_status="authorized",
+            permission_scope=["record", "clip", "publish"],
             proof_reference="Permission email", gameplay_verified=True,
         )
 
@@ -45,6 +46,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
         self.runner.policy.add_source(
             "UC-auth-1", "AuthChannel", permission_status="authorized",
+            permission_scope=["record", "clip", "publish"],
             proof_reference="Permission email", gameplay_verified=True,
         )
         # Create a dummy clip output in output_dir
