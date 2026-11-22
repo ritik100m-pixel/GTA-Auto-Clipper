@@ -1,0 +1,70 @@
+﻿name: Cloud Queue Tests
+
+on:
+  push:
+    branches:
+      - cloud-batch-audit
+      - automation/cloud-runner-mvp-v2
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-cloud-queue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: python -m pip install numpy requests
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Add Go tools to PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Lint GitHub Actions workflows
+        run: actionlint
+
+      - name: Run persistent queue tests
+        run: python -m unittest tests.test_cloud_queue -v
+
+      - name: Run persistent recording session tests
+        run: python -m unittest tests.test_recording_session -v
+
+      - name: Run clipper tests
+        run: python -m unittest tests.test_clipper -v
+
+      - name: Run live chat tests
+        run: python -m unittest tests.test_live_chat -v
+
+      - name: Run publisher tests
+        run: python -m unittest tests.test_publisher -v
+
+      - name: Run source policy tests
+        run: python -m unittest tests.test_source_policy -v
+
+      - name: Run content classifier tests
+        run: python -m unittest tests.test_content_classifier -v
+
+      - name: Run smart scheduler tests
+        run: python -m unittest tests.test_smart_scheduler -v
+
+      - name: Run YouTube publisher tests
+        run: python -m unittest tests.test_youtube_publisher -v
+
+      - name: Run cloud runner tests
+        run: python -m unittest tests.test_cloud_runner -v
+

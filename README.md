@@ -16,7 +16,13 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 - Resets audio and video timestamps before burning the captions.
 - Masks swear words and sexual words in the burned-in captions (for example `s***`) so platforms do not limit the clip; the original audio is unchanged.
 - Saves MP4 and JSON metadata in `output/`. It never posts as part of clipping.
-- Schedules reviewed clips through Zernio by default. Optional unattended scheduling is available after account setup and with a standing source-rights policy; dry-run is the default.
+- Local clipping only writes MP4 and JSON files. Optional publishing adapters are separate. The cloud workflow uses the direct YouTube API route and keeps publishing disabled/dry-run until explicitly configured.
+
+## Cloud automation
+
+The repository includes a GitHub Actions cloud workflow that can discover authorized live sources, capture and process clips, and optionally schedule YouTube Shorts while your PC is off. It runs in bounded batches, not continuously. The default is fail-closed: no source channels are configured, capture is blocked until a source has explicit recording/clipping permission and a gameplay review, and publishing is disabled/dry-run by default.
+
+See [docs/CLOUD-ARCHITECTURE.md](docs/CLOUD-ARCHITECTURE.md) for the setup steps, required GitHub Secrets/Variables, source-policy format, storage limits, and safe publishing switches. Public clip artifacts are opt-in and require publish permission. Do not add creator channels until you have permission to record, edit, and publish their footage.
 
 ## Install
 

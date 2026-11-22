@@ -9,6 +9,8 @@ __pycache__/
 *.mp4
 *.ts
 work/
+recordings/
+cloud_state/
 test_out/
 output/
 *.log
