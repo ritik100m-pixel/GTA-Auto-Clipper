@@ -47,6 +47,15 @@ class SourcePolicyTests(unittest.TestCase):
         self.assertTrue(env_policy.is_authorized("UC-env", "record"))
         self.assertFalse(env_policy.is_authorized("UC-local", "record"))
 
+    def test_invalid_approved_video_ids_are_rejected(self):
+        payload = (
+            '{"sources":{"UC-invalid":{"channel_id":"UC-invalid",'
+            '"permission_scope":["record","clip"],"approved_video_ids":"not-a-list"}}}'
+        )
+        with patch.dict("os.environ", {"GTA_SOURCE_ALLOWLIST_JSON": payload}):
+            with self.assertRaisesRegex(ValueError, "approved_video_ids"):
+                SourcePolicy(self.policy_file)
+
     def test_unauthorized_when_status_is_revoked_or_pending(self):
         self.policy.add_source(
             "UC-pending", "PendingCreator",

@@ -7,7 +7,7 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 ## What it does
 
 - Searches current YouTube live results for a phrase such as `GTA 6` and prints machine-readable JSON for AI agents.
-- In cloud mode, also checks the uploads playlists of explicitly allowlisted creators for recent regular videos; livestreams and VODs share the same permission checks and deduplication.
+- In cloud mode, discovers recent uploads from explicitly allowlisted creators. Regular videos are processed through a separate finite-video pipeline only when their individual video IDs have been reviewed and approved in the private source policy; livestreams continue through the live recorder.
 - Requires an explicit visual confirmation before live capture, so a discussion stream or facecam-only source is not silently treated as gameplay.
 - Records a live source in rolling chunks. By default it ranks moments by live-chat reactions, then falls back to audio and speech if chat is unavailable or has no messages for a chunk. Combined chat, audio, and speech scoring is also available.
 - Starts clips a few seconds before the detected highlight (6 seconds by default).
