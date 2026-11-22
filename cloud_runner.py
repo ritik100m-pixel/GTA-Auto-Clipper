@@ -280,7 +280,7 @@ class CloudBatchRunner:
 
             # Step 3: Publish only this batch's outputs, and only when explicitly enabled.
             if not enable_publishing:
-                print("Publishing is disabled. Generated clips will remain in the output artifact.")
+                print("Publishing is disabled. Generated clips stay on this temporary runner unless a separately authorized public artifact is enabled.")
             else:
                 if unattended and os.environ.get("GTA_UNATTENDED_POSTS") != "1":
                     raise PermissionError(
