@@ -66,8 +66,8 @@ class CloudBatchRunner:
         try:
             candidates = find_streams(query, key, limit=max_results)
         except Exception as exc:
-            print(f"Stream search encountered error: {exc}")
-            return []
+            print(f"Stream search encountered error: {type(exc).__name__}: {exc}")
+            candidates = []
 
         authorized, unauthorized = self.policy.filter_streams(candidates, required_scope="record")
         authorized, missing_clip_scope = self.policy.filter_streams(authorized, required_scope="clip")
@@ -380,8 +380,10 @@ class CloudBatchRunner:
                             print(f"Dry-run preview for {meta_path.name}: would schedule at {scheduled_time}")
                         else:
                             stats["clips_published"] += 1
-                            if pub_res.get("id"):
-                                self.performance_ledger.register(pub_res["id"], scheduled_time, cat)
+                            published_result = pub_res.get("result", {}) if isinstance(pub_res, dict) else {}
+                            video_id = published_result.get("id") if isinstance(published_result, dict) else None
+                            if video_id:
+                                self.performance_ledger.register(video_id, scheduled_time, cat)
                             print(
                                 f"Scheduled clip {meta_path.name} for {scheduled_time} "
                                 f"({rec_slot['strategy']}; {rec_slot['slot_samples']} historical sample(s))"
