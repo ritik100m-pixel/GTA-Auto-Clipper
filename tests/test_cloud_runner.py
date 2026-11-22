@@ -40,6 +40,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertTrue(enqueued[0]["authorized"])
 
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
+        self.runner.policy.add_source("UC-auth-1", "AuthChannel", gameplay_verified=True)
         # Create a dummy clip output in output_dir
         dummy_mp4 = self.output_dir / "clip_001.mp4"
         dummy_json = self.output_dir / "clip_001.json"
