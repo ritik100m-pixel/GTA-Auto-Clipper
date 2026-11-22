@@ -31,8 +31,11 @@ jobs:
       - name: Install actionlint
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
 
+      - name: Add Go tools to PATH
+        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
       - name: Lint GitHub Actions workflows
-        run: "$(go env GOPATH)/bin/actionlint"
+        run: actionlint
 
       - name: Run persistent queue tests
         run: python -m unittest tests.test_cloud_queue -v
