@@ -131,12 +131,9 @@ class YouTubePublisher:
         )
 
         if dry_run or metadata.get("test"):
+            # A preview must never write a fake video ID into real clip metadata:
+            # doing so would make a later real upload look like a duplicate.
             simulated_id = f"dry-run-yt-{int(time.time())}"
-            metadata["youtube_video_id"] = simulated_id
-            metadata["youtube_publish_status"] = "dry_run_verified"
-            metadata["youtube_scheduled_for"] = status.get("publishAt")
-            with open(m_path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
             return {
                 "id": simulated_id,
                 "status": "dry_run",
