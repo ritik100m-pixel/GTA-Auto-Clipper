@@ -6,7 +6,8 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 
 ## What it does
 
-- Searches current YouTube live results for a phrase such as `GTA 6` and prints machine-readable JSON for AI agents.\n- In cloud mode, also checks the uploads playlists of explicitly allowlisted creators for recent regular videos; livestreams and VODs share the same permission checks and deduplication.
+- Searches current YouTube live results for a phrase such as `GTA 6` and prints machine-readable JSON for AI agents.
+- In cloud mode, also checks the uploads playlists of explicitly allowlisted creators for recent regular videos; livestreams and VODs share the same permission checks and deduplication.
 - Requires an explicit visual confirmation before live capture, so a discussion stream or facecam-only source is not silently treated as gameplay.
 - Records a live source in rolling chunks. By default it ranks moments by live-chat reactions, then falls back to audio and speech if chat is unavailable or has no messages for a chunk. Combined chat, audio, and speech scoring is also available.
 - Starts clips a few seconds before the detected highlight (6 seconds by default).
@@ -22,7 +23,9 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 
 The repository includes a GitHub Actions cloud workflow that can discover authorized livestreams and recent regular uploads from configured creators, capture/process eligible footage, and optionally schedule YouTube Shorts while your PC is off. A separate hourly workflow records public view/like/comment snapshots for videos uploaded by this system. It runs in bounded batches, not continuously. The default is fail-closed: no source channels are configured, capture is blocked until a source has explicit recording/clipping permission and a gameplay review, and publishing is disabled/dry-run by default.
 
-The posting-time analyser records public performance snapshots around 1h, 6h, 24h, and 48h after scheduling. The scheduler learns from actual 48-hour results and starts with neutral time-slot assumptions; it does not claim a best time before it has evidence. Snapshot timing is best-effort because GitHub schedules can be delayed and cache storage can be evicted. This is YouTube Data API public statistics, not private audience-retention/impressions analytics. Instagram Reels analytics are not implemented.\n\nSee [docs/CLOUD-ARCHITECTURE.md](docs/CLOUD-ARCHITECTURE.md) for setup steps, required GitHub Secrets/Variables, source-policy format, storage limits, and safe publishing switches. Public clip artifacts are opt-in and require publish permission. Do not add creator channels until you have permission to record, edit, and publish their footage.
+The posting-time analyser records public performance snapshots around 1h, 6h, 24h, and 48h after scheduling. The scheduler learns from actual 48-hour results and starts with neutral time-slot assumptions; it does not claim a best time before it has evidence. Snapshot timing is best-effort because GitHub schedules can be delayed and cache storage can be evicted. This is YouTube Data API public statistics, not private audience-retention/impressions analytics. Instagram Reels analytics are not implemented.
+
+See [docs/CLOUD-ARCHITECTURE.md](docs/CLOUD-ARCHITECTURE.md) for setup steps, required GitHub Secrets/Variables, source-policy format, storage limits, and safe publishing switches. Public clip artifacts are opt-in and require publish permission. Do not add creator channels until you have permission to record, edit, and publish their footage.
 
 ## Install
 
