@@ -66,11 +66,8 @@ class UnifiedPublisher:
 
         elif self.provider == "zernio":
             if dry_run:
+                # Preview only. Do not persist a fake post ID or block a later real post.
                 simulated_id = f"dry-run-zernio-{base.name}"
-                metadata["zernio_post_id"] = simulated_id
-                metadata["zernio_status"] = "dry_run_verified"
-                with open(m_path, "w", encoding="utf-8") as f:
-                    json.dump(metadata, f, indent=2, ensure_ascii=False)
                 return {
                     "provider": "zernio",
                     "result": {"id": simulated_id, "status": "dry_run_verified"},
@@ -99,10 +96,6 @@ class UnifiedPublisher:
 
         else:  # dry_run
             sim_id = f"simulated-{base.name}"
-            metadata["dry_run_published"] = True
-            metadata["dry_run_scheduled_for"] = scheduled_for
-            with open(m_path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
             return {
                 "provider": "dry_run",
                 "result": {"id": sim_id, "status": "simulated_success"},
