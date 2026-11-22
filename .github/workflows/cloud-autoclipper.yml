@@ -111,7 +111,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
             DRY_RUN_INPUT="${GTA_DRY_RUN:-true}"
             ENABLE_PUBLISHING_INPUT="${GTA_ENABLE_PUBLISHING:-false}"
-            if [ "$GTA_UNATTENDED_POSTS" = "1" ]; then
+            if [ "$GTA_UNATTENDED_POSTS" = "1" ] && [ "$ENABLE_PUBLISHING_INPUT" = "true" ]; then
               UNATTENDED_INPUT="true"
             fi
           fi
