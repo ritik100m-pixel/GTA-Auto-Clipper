@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from content_classifier import classify_clip_content, ClipDeduplicator
 
 
@@ -53,6 +55,26 @@ class ContentClassifierTests(unittest.TestCase):
         is_dup, reason = dedup.is_duplicate(600.0, phrase2)
         self.assertTrue(is_dup)
         self.assertTrue(reason.startswith("transcript_similarity"))
+
+    def test_temporal_overlap_is_scoped_to_same_source(self):
+        dedup = ClipDeduplicator(time_overlap_margin=10.0)
+        dedup.register_clip(100.0, "a distinct moment from source one", source_id="UC-one")
+        is_dup, _ = dedup.is_duplicate(
+            105.0, "completely different words from source two", source_id="UC-two"
+        )
+        self.assertFalse(is_dup)
+
+    def test_deduplication_history_persists_between_batches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = Path(tmp) / "dedupe.json"
+            first = ClipDeduplicator(state_path=state_path)
+            first.register_clip(100.0, "a unique recorded clip transcript", clip_id="clip-a", source_id="UC-one")
+            reopened = ClipDeduplicator(state_path=state_path)
+            is_dup, reason = reopened.is_duplicate(
+                105.0, "different words for the same clip", source_id="UC-one"
+            )
+            self.assertTrue(is_dup)
+            self.assertEqual(reason, "temporal_overlap")
 
 
 if __name__ == "__main__":
