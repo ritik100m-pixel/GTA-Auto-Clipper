@@ -21,6 +21,7 @@ class SourcePolicyTests(unittest.TestCase):
             permission_scope=["record", "clip", "publish"],
             proof_reference="Agreement-2026-A",
             credit="Credit: GTAGamerOfficial",
+            gameplay_verified=True,
         )
         self.assertEqual(entry["channel_id"], "UC-channel-123")
         self.assertEqual(entry["channel_name"], "GTAGamerOfficial")
@@ -30,10 +31,15 @@ class SourcePolicyTests(unittest.TestCase):
     def test_unauthorized_when_not_in_allowlist(self):
         self.assertFalse(self.policy.is_authorized("UC-unknown-channel"))
 
+    def test_creator_permission_without_gameplay_review_is_not_enough(self):
+        self.policy.add_source("UC-not-reviewed", "NotReviewed")
+        self.assertFalse(self.policy.is_authorized("UC-not-reviewed", "record"))
+
     def test_unauthorized_when_status_is_revoked_or_pending(self):
         self.policy.add_source(
             "UC-pending", "PendingCreator",
             permission_status="pending",
+            gameplay_verified=True,
         )
         self.assertFalse(self.policy.is_authorized("UC-pending"))
 
@@ -48,19 +54,20 @@ class SourcePolicyTests(unittest.TestCase):
             "UC-limited", "LimitedCreator",
             permission_status="authorized",
             permission_scope=["record", "clip"],  # no 'publish' scope
+            gameplay_verified=True,
         )
         self.assertTrue(self.policy.is_authorized("UC-limited", "clip"))
         self.assertFalse(self.policy.is_authorized("UC-limited", "publish"))
 
     def test_persistence_across_reopen(self):
-        self.policy.add_source("UC-persist", "PersistentGamer", proof_reference="REF-99")
+        self.policy.add_source("UC-persist", "PersistentGamer", proof_reference="REF-99", gameplay_verified=True)
         reopened = SourcePolicy(self.policy_file)
         self.assertTrue(reopened.is_authorized("UC-persist"))
         src = reopened.get_source("UC-persist")
         self.assertEqual(src["proof_reference"], "REF-99")
 
     def test_filter_streams(self):
-        self.policy.add_source("UC-allowed", "AllowedGamer")
+        self.policy.add_source("UC-allowed", "AllowedGamer", gameplay_verified=True)
         streams = [
             {"channel_id": "UC-allowed", "title": "GTA 6 Live Gameplay"},
             {"channel_id": "UC-random", "title": "Random Stream"},
