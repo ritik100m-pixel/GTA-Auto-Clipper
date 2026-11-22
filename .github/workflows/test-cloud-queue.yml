@@ -5,6 +5,7 @@ on:
     branches:
       - cloud-batch-audit
       - automation/cloud-runner-mvp-v2
+      - feat/creator-vod-and-posting-analytics
   pull_request:
     branches:
       - main
@@ -61,7 +62,7 @@ jobs:
 
       - name: Run smart scheduler tests
         run: python -m unittest tests.test_smart_scheduler -v
-
+\n      - name: Run creator video discovery tests\n        run: python -m unittest tests.test_find_channel_videos -v\n\n      - name: Run performance tracker tests\n        run: python -m unittest tests.test_performance_tracker -v\n
       - name: Run YouTube publisher tests
         run: python -m unittest tests.test_youtube_publisher -v
 
