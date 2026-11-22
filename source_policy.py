@@ -45,6 +45,12 @@ class SourcePolicy:
                 raise ValueError(f"Source allowlist key does not match channel_id: {channel_id}")
             if not isinstance(entry.get("permission_scope", []), list):
                 raise ValueError(f"permission_scope must be a list for source {channel_id}")
+            approved_video_ids = entry.get("approved_video_ids", [])
+            if not isinstance(approved_video_ids, list) or any(
+                not isinstance(video_id, str) or not video_id.strip()
+                for video_id in approved_video_ids
+            ):
+                raise ValueError(f"approved_video_ids must be a list of non-empty video IDs for source {channel_id}")
         self.sources = sources
         return self
 
