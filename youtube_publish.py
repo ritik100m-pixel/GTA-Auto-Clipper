@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import time
+import requests
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -70,7 +71,16 @@ class YouTubePublisher:
 
     def build_snippet_and_status(self, metadata, scheduled_for=None, privacy_status="public"):
         """Construct official YouTube API snippet and status dicts."""
-        raw_title = metadata.get("title") or "GTA Epic Gameplay Moment"
+        raw_title = metadata.get("title")
+        if not raw_title:
+            category = str(metadata.get("category") or "gameplay").replace("_", " ")
+            transcript = " ".join(str(metadata.get("transcript") or "").split())
+            if transcript:
+                excerpt = transcript[:58].rsplit(" ", 1)[0]
+                raw_title = f"GTA {category}: {excerpt}".strip()
+            else:
+                stream_title = metadata.get("stream_title") or "Gameplay moment"
+                raw_title = f"GTA {category}: {stream_title}"
         # Shorts best practice: include #Shorts in title or description
         if "#shorts" not in raw_title.lower() and len(raw_title) <= 92:
             title = f"{raw_title} #Shorts"
@@ -78,8 +88,14 @@ class YouTubePublisher:
             title = raw_title[:100]
 
         description = metadata.get("youtube_description") or metadata.get("transcript") or title
+        credit = metadata.get("credit")
+        source_url = metadata.get("source_url")
+        if credit:
+            description = f"{description}\n\nOriginal creator: {credit}"
+        if source_url:
+            description = f"{description}\nSource stream: {source_url}"
         if "#Shorts" not in description:
-            description = f"{description}\n\n#Shorts #GTA #GTA6"
+            description = f"{description}\n\n#Shorts #GTA"
 
         tags = list(metadata.get("detected_tags") or metadata.get("hashtags") or ["GTA", "Shorts", "GTA6"])
 
@@ -164,19 +180,66 @@ class YouTubePublisher:
         if not session_url:
             raise RuntimeError("YouTube API did not return a resumable upload Location header.")
 
-        # Step 2: Stream video bytes to the session location
+        # Step 2: Upload in resumable 8 MiB chunks. A 308 response reports
+        # the last byte accepted by YouTube, allowing safe continuation after
+        # a transient network interruption.
+        chunk_size = 8 * 1024 * 1024
+        offset = 0
+        result = None
+        no_progress_retries = 0
         with open(v_path, "rb") as video_file:
-            upload_req = urllib.request.Request(
-                session_url,
-                data=video_file,
-                headers={
+            while offset < file_size:
+                video_file.seek(offset)
+                chunk = video_file.read(min(chunk_size, file_size - offset))
+                if not chunk:
+                    raise RuntimeError("Unexpected end of file during YouTube upload.")
+                end = offset + len(chunk) - 1
+                headers = {
                     "Content-Type": "video/mp4",
-                    "Content-Length": str(file_size),
-                },
-                method="PUT",
-            )
-            with urllib.request.urlopen(upload_req, timeout=600) as upload_resp:
-                result = json.load(upload_resp)
+                    "Content-Length": str(len(chunk)),
+                    "Content-Range": f"bytes {offset}-{end}/{file_size}",
+                }
+
+                response = None
+                for attempt in range(3):
+                    try:
+                        response = requests.put(
+                            session_url, data=chunk, headers=headers,
+                            timeout=(30, 600), allow_redirects=False,
+                        )
+                        break
+                    except requests.RequestException:
+                        if attempt == 2:
+                            raise
+                        time.sleep(2 ** attempt)
+
+                if response.status_code == 308:
+                    received_range = response.headers.get("Range", "")
+                    if received_range:
+                        try:
+                            next_offset = int(received_range.rsplit("-", 1)[1]) + 1
+                        except (ValueError, IndexError):
+                            raise RuntimeError(f"Invalid YouTube resumable upload Range: {received_range}")
+                    else:
+                        next_offset = 0
+
+                    if next_offset <= offset:
+                        no_progress_retries += 1
+                        if no_progress_retries >= 3:
+                            raise RuntimeError("YouTube resumable upload made no progress after three attempts.")
+                    else:
+                        no_progress_retries = 0
+                    if next_offset > file_size:
+                        raise RuntimeError("YouTube resumable upload reported an invalid byte range.")
+                    offset = next_offset
+                    continue
+
+                response.raise_for_status()
+                result = response.json()
+                break
+
+        if not result:
+            raise RuntimeError("YouTube upload ended without a completed response.")
 
         video_id = result.get("id")
         if not video_id:
