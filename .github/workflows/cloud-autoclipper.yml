@@ -83,13 +83,19 @@ jobs:
           GTA_UNATTENDED_POSTS: ${{ secrets.GTA_UNATTENDED_POSTS }}
           GTA_ENABLE_PUBLISHING: ${{ vars.GTA_ENABLE_PUBLISHING }}
           GTA_DRY_RUN: ${{ vars.GTA_DRY_RUN }}
+          INPUT_DURATION_MINUTES: ${{ inputs.duration_minutes }}
+          INPUT_TARGET_CLIPS: ${{ inputs.target_clips }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_ENABLE_PUBLISHING: ${{ inputs.enable_publishing }}
+          INPUT_UNATTENDED: ${{ inputs.unattended }}
         shell: bash
         run: |
-          DURATION_MINUTES="${{ inputs.duration_minutes || '300' }}"
-          TARGET_CLIPS="${{ inputs.target_clips || '10' }}"
-          DRY_RUN_INPUT="${{ inputs.dry_run }}"
-          ENABLE_PUBLISHING_INPUT="${{ inputs.enable_publishing || 'false' }}"
-          UNATTENDED_INPUT="${{ inputs.unattended || 'false' }}"
+          set -euo pipefail
+          DURATION_MINUTES="${INPUT_DURATION_MINUTES:-300}"
+          TARGET_CLIPS="${INPUT_TARGET_CLIPS:-10}"
+          DRY_RUN_INPUT="${INPUT_DRY_RUN:-true}"
+          ENABLE_PUBLISHING_INPUT="${INPUT_ENABLE_PUBLISHING:-false}"
+          UNATTENDED_INPUT="${INPUT_UNATTENDED:-false}"
 
           # Scheduled runs use repository variables; all defaults are fail-closed.
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
@@ -98,6 +104,20 @@ jobs:
             if [ "$GTA_UNATTENDED_POSTS" = "1" ]; then
               UNATTENDED_INPUT="true"
             fi
+          fi
+
+          [[ "$DURATION_MINUTES" =~ ^[0-9]+$ ]] || { echo "duration_minutes must be an integer"; exit 2; }
+          [[ "$TARGET_CLIPS" =~ ^[0-9]+$ ]] || { echo "target_clips must be an integer"; exit 2; }
+          (( DURATION_MINUTES >= 1 && DURATION_MINUTES <= 330 )) || { echo "duration_minutes must be 1..330"; exit 2; }
+          (( TARGET_CLIPS >= 1 && TARGET_CLIPS <= 20 )) || { echo "target_clips must be 1..20"; exit 2; }
+          [[ "$DRY_RUN_INPUT" == "true" || "$DRY_RUN_INPUT" == "false" ]] || { echo "dry_run must be true or false"; exit 2; }
+          [[ "$ENABLE_PUBLISHING_INPUT" == "true" || "$ENABLE_PUBLISHING_INPUT" == "false" ]] || { echo "enable_publishing must be true or false"; exit 2; }
+          [[ "$UNATTENDED_INPUT" == "true" || "$UNATTENDED_INPUT" == "false" ]] || { echo "unattended must be true or false"; exit 2; }
+          if [ "$UNATTENDED_INPUT" = "true" ] && [ "$ENABLE_PUBLISHING_INPUT" != "true" ]; then
+            echo "unattended requires enable_publishing=true"; exit 2
+          fi
+          if [ "$UNATTENDED_INPUT" = "true" ] && [ "$GTA_UNATTENDED_POSTS" != "1" ]; then
+            echo "unattended requires the GTA_UNATTENDED_POSTS=1 secret"; exit 2
           fi
 
           args=(--duration "$((DURATION_MINUTES * 60))" --target-clips "$TARGET_CLIPS")
