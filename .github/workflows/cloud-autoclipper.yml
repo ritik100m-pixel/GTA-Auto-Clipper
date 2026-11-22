@@ -1,38 +1,34 @@
-name: GTA Cloud Auto-Clipper
+name: Daily Gameplay Video to Shorts
 
 on:
-  schedule:
-    # Best-effort daily windows. GitHub may delay scheduled workflows during load.
-    - cron: "0 4,16 * * *"
   workflow_dispatch:
     inputs:
-      duration_minutes:
-        description: "Maximum runner time in minutes (default 300; hard job timeout 345)"
-        required: false
-        default: "300"
+      video_url:
+        description: "Unlisted YouTube video URL from your configured owner channel"
+        required: true
         type: string
+      confirm_rights:
+        description: "I own this gameplay video or have explicit rights to edit and publish it"
+        required: true
+        default: false
+        type: boolean
       target_clips:
-        description: "Target quality clips for this batch"
-        required: false
+        description: "Target number of quality Shorts (1-20)"
+        required: true
         default: "10"
         type: string
       dry_run:
-        description: "Dry-run publishing (recommended until setup is verified)"
+        description: "Preview only; do not upload or schedule"
         required: true
         default: true
         type: boolean
       enable_publishing:
-        description: "Allow publishing eligible clips"
+        description: "Enable YouTube upload and scheduling"
         required: true
         default: false
         type: boolean
       unattended:
-        description: "Allow unattended publishing for sources with explicit publish permission"
-        required: true
-        default: false
-        type: boolean
-      upload_output_artifact:
-        description: "Upload generated clips as a public artifact (any repository reader can download)"
+        description: "Allow automatic scheduling under the standing owner-channel permission"
         required: true
         default: false
         type: boolean
@@ -41,11 +37,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: gta-cloud-autoclipper
+  group: gta-daily-gameplay-upload
   cancel-in-progress: false
 
 jobs:
-  cloud-autoclipper-batch:
+  process-gameplay:
     runs-on: ubuntu-latest
     timeout-minutes: 345
 
@@ -58,7 +54,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install system media dependencies
+      - name: Set up Node.js for yt-dlp
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
@@ -68,41 +69,26 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Restore persistent cloud state
-        uses: actions/cache@v4
-        with:
-          path: |
-            cloud_state/queue.sqlite3*
-            cloud_state/dedupe_ledger.json
-          key: cloud-clipper-state-${{ github.run_id }}
-          restore-keys: |
-            cloud-clipper-state-
-
-      - name: Restore YouTube performance history
+      - name: Restore only non-media scheduling history
         uses: actions/cache@v4
         with:
           path: |
             cloud_state/analytics_ledger.json
             cloud_state/video_performance.json
-          key: youtube-performance-${{ github.run_id }}
+          key: gta-scheduler-history-${{ github.run_id }}
           restore-keys: |
-            youtube-performance-
-      - name: Remove legacy cached source policy and raw media
-        run: |
-          rm -f cloud_state/source_allowlist.json
-          rm -rf recordings
+            gta-scheduler-history-
 
-      - name: Execute cloud batch
+      - name: Process the submitted gameplay video
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          GTA_SOURCE_ALLOWLIST_JSON: ${{ secrets.GTA_SOURCE_ALLOWLIST_JSON }}
+          GTA_OWNER_CHANNEL_ID: ${{ secrets.GTA_OWNER_CHANNEL_ID }}
           GTA_UNATTENDED_POSTS: ${{ secrets.GTA_UNATTENDED_POSTS }}
-          GTA_ENABLE_PUBLISHING: ${{ vars.GTA_ENABLE_PUBLISHING }}
-          GTA_DRY_RUN: ${{ vars.GTA_DRY_RUN }}
-          INPUT_DURATION_MINUTES: ${{ inputs.duration_minutes }}
+          INPUT_VIDEO_URL: ${{ inputs.video_url }}
+          INPUT_CONFIRM_RIGHTS: ${{ inputs.confirm_rights }}
           INPUT_TARGET_CLIPS: ${{ inputs.target_clips }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_ENABLE_PUBLISHING: ${{ inputs.enable_publishing }}
@@ -110,89 +96,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DURATION_MINUTES="${INPUT_DURATION_MINUTES:-300}"
-          TARGET_CLIPS="${INPUT_TARGET_CLIPS:-10}"
-          DRY_RUN_INPUT="${INPUT_DRY_RUN:-true}"
-          ENABLE_PUBLISHING_INPUT="${INPUT_ENABLE_PUBLISHING:-false}"
-          UNATTENDED_INPUT="${INPUT_UNATTENDED:-false}"
 
-          # Scheduled runs use repository variables; all defaults are fail-closed.
-          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            DRY_RUN_INPUT="${GTA_DRY_RUN:-true}"
-            ENABLE_PUBLISHING_INPUT="${GTA_ENABLE_PUBLISHING:-false}"
-            if [ "$GTA_UNATTENDED_POSTS" = "1" ] && [ "$ENABLE_PUBLISHING_INPUT" = "true" ]; then
-              UNATTENDED_INPUT="true"
-            fi
-          fi
+          [[ -n "$INPUT_VIDEO_URL" ]] || { echo "A video URL is required."; exit 2; }
+          [[ "$INPUT_CONFIRM_RIGHTS" == "true" ]] || {
+            echo "Confirm ownership or explicit editing/publishing rights before processing."
+            exit 2
+          }
+          [[ -n "$GTA_OWNER_CHANNEL_ID" ]] || {
+            echo "Add the GTA_OWNER_CHANNEL_ID secret before running this workflow."
+            exit 2
+          }
+          [[ "$INPUT_TARGET_CLIPS" =~ ^[0-9]+$ ]] || { echo "target_clips must be an integer."; exit 2; }
+          (( INPUT_TARGET_CLIPS >= 1 && INPUT_TARGET_CLIPS <= 20 )) || {
+            echo "target_clips must be between 1 and 20."
+            exit 2
+          }
+          [[ "$INPUT_DRY_RUN" == "true" || "$INPUT_DRY_RUN" == "false" ]] || exit 2
+          [[ "$INPUT_ENABLE_PUBLISHING" == "true" || "$INPUT_ENABLE_PUBLISHING" == "false" ]] || exit 2
+          [[ "$INPUT_UNATTENDED" == "true" || "$INPUT_UNATTENDED" == "false" ]] || exit 2
 
-          [[ "$DURATION_MINUTES" =~ ^[0-9]+$ ]] || { echo "duration_minutes must be an integer"; exit 2; }
-          [[ "$TARGET_CLIPS" =~ ^[0-9]+$ ]] || { echo "target_clips must be an integer"; exit 2; }
-          (( DURATION_MINUTES >= 1 && DURATION_MINUTES <= 330 )) || { echo "duration_minutes must be 1..330"; exit 2; }
-          (( TARGET_CLIPS >= 1 && TARGET_CLIPS <= 20 )) || { echo "target_clips must be 1..20"; exit 2; }
-          [[ "$DRY_RUN_INPUT" == "true" || "$DRY_RUN_INPUT" == "false" ]] || { echo "dry_run must be true or false"; exit 2; }
-          [[ "$ENABLE_PUBLISHING_INPUT" == "true" || "$ENABLE_PUBLISHING_INPUT" == "false" ]] || { echo "enable_publishing must be true or false"; exit 2; }
-          [[ "$UNATTENDED_INPUT" == "true" || "$UNATTENDED_INPUT" == "false" ]] || { echo "unattended must be true or false"; exit 2; }
-          if [ "$UNATTENDED_INPUT" = "true" ] && [ "$ENABLE_PUBLISHING_INPUT" != "true" ]; then
-            echo "unattended requires enable_publishing=true"; exit 2
-          fi
-          if [ "$UNATTENDED_INPUT" = "true" ] && [ "$GTA_UNATTENDED_POSTS" != "1" ]; then
-            echo "unattended requires the GTA_UNATTENDED_POSTS=1 secret"; exit 2
-          fi
+          args=(--url "$INPUT_VIDEO_URL"
+                --owner-channel-id "$GTA_OWNER_CHANNEL_ID"
+                --confirm-rights
+                --target-clips "$INPUT_TARGET_CLIPS")
 
-          args=(--duration "$((DURATION_MINUTES * 60))" --target-clips "$TARGET_CLIPS")
-          if [ "$DRY_RUN_INPUT" = "true" ]; then
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
             args+=(--dry-run)
           fi
-          if [ "$ENABLE_PUBLISHING_INPUT" = "true" ]; then
+          if [ "$INPUT_ENABLE_PUBLISHING" = "true" ]; then
             args+=(--enable-publishing)
           fi
-          if [ "$UNATTENDED_INPUT" = "true" ]; then
+          if [ "$INPUT_UNATTENDED" = "true" ]; then
             args+=(--unattended)
           fi
 
-          python cloud_runner.py "${args[@]}"
+          python process_uploaded_video.py "${args[@]}"
 
-      - name: Verify public artifact permission
-        if: success() && (inputs.upload_output_artifact == true || vars.GTA_UPLOAD_OUTPUT_ARTIFACTS == 'true')
-        env:
-          GTA_SOURCE_ALLOWLIST_JSON: ${{ secrets.GTA_SOURCE_ALLOWLIST_JSON }}
+      - name: Delete all temporary video, clip, queue, and raw processing data
+        if: always()
         run: |
-          python - <<'PY'
-          import glob
-          import json
-          import os
-          from source_policy import SourcePolicy
-
-          policy = SourcePolicy()
-          metadata_paths = glob.glob("output/*.json")
-          video_paths = glob.glob("output/*.mp4")
-          metadata_stems = {path.rsplit("/", 1)[-1][:-5] for path in metadata_paths}
-          video_stems = {path.rsplit("/", 1)[-1][:-4] for path in video_paths}
-          if metadata_stems != video_stems:
-              raise SystemExit("Refusing public artifact: every MP4 must have matching JSON metadata.")
-          for path in metadata_paths:
-              with open(path, "r", encoding="utf-8") as f:
-                  metadata = json.load(f)
-              channel_id = metadata.get("source_channel_id")
-              if (
-                  metadata.get("test")
-                  or not policy.is_authorized(channel_id, "publish")
-                  or (
-                      not metadata.get("approved")
-                      and os.environ.get("GTA_UNATTENDED_POSTS") != "1"
-                  )
-              ):
-                  raise SystemExit(
-                      f"Refusing public artifact: {path} lacks explicit source publish permission/approval."
-                  )
-          PY
-
-      - name: Upload generated clips (public artifact; opt-in only)
-        if: success() && (inputs.upload_output_artifact == true || vars.GTA_UPLOAD_OUTPUT_ARTIFACTS == 'true')
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-clips-${{ github.run_number }}
-          path: output/
-          if-no-files-found: ignore
-          retention-days: 1
-
+          rm -rf output recordings work test_out
+          mkdir -p cloud_state
+          find cloud_state -maxdepth 1 -type f \
+            ! -name "analytics_ledger.json" \
+            ! -name "video_performance.json" -delete
+          find cloud_state -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
