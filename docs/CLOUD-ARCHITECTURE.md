@@ -144,7 +144,8 @@ The repository's GitHub Actions test workflow covers:
 - Clipper framing, captions, and moment selection
 - Live-chat fallback and reaction scoring
 - Source allowlist and permission gates
-- Content classification and measured posting-time scheduling\n- Configured creator uploads discovery and public performance snapshots
+- Content classification and measured posting-time scheduling
+- Configured creator uploads discovery and public performance snapshots
 - YouTube publisher dry-run and duplicate protection
 - Cloud batch orchestration and publishing opt-in
 
