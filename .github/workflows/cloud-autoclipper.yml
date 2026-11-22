@@ -78,8 +78,10 @@ jobs:
           restore-keys: |
             cloud-clipper-state-
 
-      - name: Remove any legacy cached source allowlist
-        run: rm -f cloud_state/source_allowlist.json
+      - name: Remove legacy cached source policy and raw media
+        run: |
+          rm -f cloud_state/source_allowlist.json cloud_state/analytics_ledger.json
+          rm -rf recordings
 
       - name: Execute cloud batch
         env:
