@@ -32,7 +32,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         )
 
         mock_streams = [
-            {"channel_id": "UC-auth-1", "channel": "AuthChannel", "url": "https://youtube.com/watch?v=aaa111", "title": "GTA Stream 1"},
+            {"channel_id": "UC-auth-1", "channel": "AuthChannel", "url": "https://youtube.com/watch?v=aaa111", "video_id": "aaa111", "title": "GTA Stream 1"},
             {"channel_id": "UC-unauth-2", "channel": "RandomChannel", "url": "https://youtube.com/watch?v=bbb222", "title": "GTA Stream 2"},
         ]
 
@@ -42,6 +42,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertEqual(len(enqueued), 1)
         self.assertEqual(enqueued[0]["job_key"], "youtube-live:UC-auth-1:https://youtube.com/watch?v=aaa111")
         self.assertTrue(enqueued[0]["authorized"])
+        self.assertEqual(enqueued[0]["payload"]["video_id"], "aaa111")
 
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
         self.runner.policy.add_source(
