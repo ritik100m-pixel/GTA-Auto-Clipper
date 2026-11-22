@@ -78,9 +78,18 @@ jobs:
           restore-keys: |
             cloud-clipper-state-
 
+      - name: Restore YouTube performance history
+        uses: actions/cache@v4
+        with:
+          path: |
+            cloud_state/analytics_ledger.json
+            cloud_state/video_performance.json
+          key: youtube-performance-${{ github.run_id }}
+          restore-keys: |
+            youtube-performance-
       - name: Remove legacy cached source policy and raw media
         run: |
-          rm -f cloud_state/source_allowlist.json cloud_state/analytics_ledger.json
+          rm -f cloud_state/source_allowlist.json
           rm -rf recordings
 
       - name: Execute cloud batch
