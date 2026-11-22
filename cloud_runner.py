@@ -15,6 +15,7 @@ import os
 import sys
 import time
 import uuid
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from clip import (
     source_identity, stream_info, recording_session_id,
     process_chunk, run_recovery, start_recorder,
 )
+from vod_processor import download_youtube_video, split_video
 from recording_session import RecordingSession
 
 
@@ -115,12 +117,41 @@ class CloudBatchRunner:
         except Exception as exc:
             print(f"Regular-video discovery encountered error: {type(exc).__name__}: {exc}")
             videos = []
-        # VODs are discovered for reporting, but this queue currently uses a
-        # live-stream recorder. Do not enqueue regular uploads until a dedicated
-        # finite-video download/process path exists.
+        # Regular uploads need explicit per-video review. A channel-level
+        # gameplay flag is not enough to approve every later upload.
+        queued_vods = 0
+        awaiting_review = 0
+        for video in videos:
+            source = self.policy.get_source(video["channel_id"]) or {}
+            approved_video_ids = {
+                str(value) for value in source.get("approved_video_ids", [])
+            }
+            if str(video.get("video_id") or "") not in approved_video_ids:
+                awaiting_review += 1
+                continue
+            job = self.queue.enqueue(
+                job_type="capture_and_clip",
+                job_key=f"youtube-video:{video['channel_id']}:{video['video_id']}",
+                payload={
+                    "url": video["url"],
+                    "video_id": video["video_id"],
+                    "title": video.get("title"),
+                    "channel_id": video["channel_id"],
+                    "channel": video.get("channel"),
+                    "credit": source.get("credit") or video.get("channel"),
+                    "gameplay_verified": True,
+                    "source_type": "youtube_video",
+                    "published_at": video.get("published_at"),
+                },
+                authorized=True,
+                max_attempts=2,
+            )
+            enqueued_jobs.append(job)
+            queued_vods += 1
+
         print(
-            f"Regular-video discovery found {len(videos)} recent uploads from configured creators; "
-            "VOD capture is not enabled yet."
+            f"Regular-video discovery found {len(videos)} uploads: "
+            f"{queued_vods} individually reviewed and queued, {awaiting_review} awaiting video review."
         )
         return enqueued_jobs
 
@@ -224,12 +255,72 @@ class CloudBatchRunner:
                 url = payload.get("url")
                 channel_id = payload.get("channel_id")
 
-                # Queue state may survive deployments. Older runs could have
-                # queued VODs before VOD capture was implemented; retire them
-                # safely instead of sending them to the live recorder.
                 if payload.get("source_type") == "youtube_video":
-                    self.queue.complete(job_id, self.worker_id)
-                    print(f"Skipped legacy VOD job {job_id}: finite-video capture is not enabled.")
+                    source = self.policy.get_source(channel_id) or {}
+                    approved_video_ids = {
+                        str(value) for value in source.get("approved_video_ids", [])
+                    }
+                    video_id = str(payload.get("video_id") or "")
+                    allowed = (
+                        bool(video_id)
+                        and video_id in approved_video_ids
+                        and payload.get("gameplay_verified") is True
+                        and all(
+                            self.policy.is_authorized(channel_id, required_scope=scope)
+                            for scope in ("record", "clip")
+                        )
+                    )
+                    if not allowed:
+                        stats["jobs_skipped_unauthorized"] += 1
+                        self.queue.complete(job_id, self.worker_id)
+                        print(f"Skipped VOD job {job_id}: source or individual video approval is missing.")
+                        continue
+
+                    print(f"Processing reviewed YouTube video {video_id}: {url}")
+                    try:
+                        with tempfile.TemporaryDirectory(
+                            prefix="gta-vod-", dir=str(self.recordings_dir)
+                        ) as temp_dir:
+                            info, downloaded = download_youtube_video(
+                                url,
+                                Path(temp_dir) / "download",
+                                expected_video_id=video_id,
+                                expected_channel_id=channel_id,
+                                max_duration_seconds=5400,
+                            )
+                            chunks = split_video(
+                                downloaded, Path(temp_dir) / "chunks", chunk_seconds=90
+                            )
+                            who = {
+                                "name": payload.get("channel", "Creator"),
+                                "credit": payload.get("credit"),
+                                "channel_id": channel_id,
+                                "gameplay_verified": True,
+                                "test": False,
+                            }
+                            for chunk_path in chunks:
+                                outputs, count = process_chunk(
+                                    None, str(chunk_path), self.worker_id,
+                                    str(self.output_dir), who,
+                                    payload.get("title") or info.get("title", "YouTube video"),
+                                    url,
+                                    clip_len=30, top=1, lead_in=6,
+                                    layout="fill", moment_source="audio",
+                                    gameplay_confirmed=True,
+                                    deduplicator=self.deduplicator,
+                                )
+                                generated_outputs.extend(outputs)
+                                stats["clips_generated"] += count
+                                if stats["clips_generated"] >= target_clips:
+                                    break
+                        self.queue.complete(job_id, self.worker_id)
+                        if stats["clips_generated"] == 0:
+                            print(f"No moments met the quality threshold for VOD {video_id}.")
+                    except Exception as exc:
+                        err_msg = f"VOD job {job_id} failed: {type(exc).__name__}: {exc}"
+                        print(err_msg)
+                        stats["errors"].append(err_msg)
+                        self.queue.fail(job_id, self.worker_id, str(exc))
                     continue
 
                 # Queue state is persistent and may outlive a creator permission
