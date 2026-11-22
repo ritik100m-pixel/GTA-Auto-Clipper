@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - cloud-batch-audit
+      - automation/cloud-runner-mvp-v2
   pull_request:
     branches:
       - main
