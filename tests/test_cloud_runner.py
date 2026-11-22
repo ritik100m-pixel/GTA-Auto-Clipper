@@ -102,6 +102,18 @@ class CloudBatchRunnerTests(unittest.TestCase):
         saved = json.loads(dummy_json.read_text(encoding="utf-8"))
         self.assertFalse(saved.get("dry_run_published"))
 
+    def test_stale_queued_job_is_skipped_after_source_permission_is_missing(self):
+        self.runner.queue.enqueue(
+            "capture_and_clip", "stale-stream-job",
+            {"url": "https://example.com/live"},
+            authorized=True,
+        )
+        with patch("cloud_runner.run_recovery") as recover:
+            stats = self.runner.run_batch(max_duration_seconds=30, target_clips=1)
+        self.assertEqual(stats["jobs_claimed"], 0)
+        self.assertEqual(stats["jobs_skipped_unauthorized"], 1)
+        recover.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
