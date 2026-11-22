@@ -2,30 +2,47 @@ name: GTA Cloud Auto-Clipper
 
 on:
   schedule:
-    # Run twice daily: 04:00 UTC and 16:00 UTC (09:30 and 21:30 IST)
+    # Best-effort daily windows. GitHub may delay scheduled workflows during load.
     - cron: "0 4,16 * * *"
   workflow_dispatch:
     inputs:
       duration_minutes:
-        description: "Max execution duration in minutes (max 330 to stay safely under 6h runner limit)"
+        description: "Maximum runner time in minutes (default 300; hard job timeout 345)"
         required: false
         default: "300"
+        type: string
       target_clips:
-        description: "Target number of quality clips"
+        description: "Target quality clips for this batch"
         required: false
         default: "10"
+        type: string
       dry_run:
-        description: "Simulate publishing without external posts (true/false)"
-        required: false
-        default: "false"
+        description: "Dry-run publishing (recommended until setup is verified)"
+        required: true
+        default: true
+        type: boolean
+      enable_publishing:
+        description: "Allow publishing eligible clips"
+        required: true
+        default: false
+        type: boolean
+      unattended:
+        description: "Allow unattended publishing for sources with explicit publish permission"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
+concurrency:
+  group: gta-cloud-autoclipper
+  cancel-in-progress: false
+
 jobs:
   cloud-autoclipper-batch:
     runs-on: ubuntu-latest
-    timeout-minutes: 345 # 5 hours 45 minutes safe cutoff
+    timeout-minutes: 345
 
     steps:
       - name: Checkout repository
@@ -56,40 +73,60 @@ jobs:
           restore-keys: |
             cloud-clipper-state-
 
-      - name: Execute Autonomous Cloud Batch
+      - name: Execute cloud batch
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          ZERNIO_API_KEY: ${{ secrets.ZERNIO_API_KEY }}
-          ZERNIO_YOUTUBE_ACCOUNT_ID: ${{ secrets.ZERNIO_YOUTUBE_ACCOUNT_ID }}
-          ZERNIO_INSTAGRAM_ACCOUNT_ID: ${{ secrets.ZERNIO_INSTAGRAM_ACCOUNT_ID }}
-          GTA_UNATTENDED_POSTS: "1"
+          GTA_SOURCE_ALLOWLIST_JSON: ${{ secrets.GTA_SOURCE_ALLOWLIST_JSON }}
+          GTA_UNATTENDED_POSTS: ${{ secrets.GTA_UNATTENDED_POSTS }}
+          GTA_ENABLE_PUBLISHING: ${{ vars.GTA_ENABLE_PUBLISHING }}
+          GTA_DRY_RUN: ${{ vars.GTA_DRY_RUN }}
+        shell: bash
         run: |
           DURATION_MINUTES="${{ inputs.duration_minutes || '300' }}"
           TARGET_CLIPS="${{ inputs.target_clips || '10' }}"
-          DRY_RUN_INPUT="${{ inputs.dry_run || 'false' }}"
-          DURATION_SEC=$(( ${DURATION_MINUTES:-300} * 60 ))
-          DRY_RUN_FLAG=""
-          if [ "$DRY_RUN_INPUT" = "true" ]; then
-            DRY_RUN_FLAG="--dry-run"
-          fi
-          python cloud_runner.py --duration "$DURATION_SEC" --target-clips "${TARGET_CLIPS:-10}" $DRY_RUN_FLAG
+          DRY_RUN_INPUT="${{ inputs.dry_run || 'true' }}"
+          ENABLE_PUBLISHING_INPUT="${{ inputs.enable_publishing || 'false' }}"
+          UNATTENDED_INPUT="${{ inputs.unattended || 'false' }}"
 
-      - name: Upload Output Clips Artifact
+          # Scheduled runs use repository variables; all defaults are fail-closed.
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            DRY_RUN_INPUT="${GTA_DRY_RUN:-true}"
+            ENABLE_PUBLISHING_INPUT="${GTA_ENABLE_PUBLISHING:-false}"
+            if [ "$GTA_UNATTENDED_POSTS" = "1" ]; then
+              UNATTENDED_INPUT="true"
+            fi
+          fi
+
+          args=(--duration "$((DURATION_MINUTES * 60))" --target-clips "$TARGET_CLIPS")
+          if [ "$DRY_RUN_INPUT" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          if [ "$ENABLE_PUBLISHING_INPUT" = "true" ]; then
+            args+=(--enable-publishing)
+          fi
+          if [ "$UNATTENDED_INPUT" = "true" ]; then
+            args+=(--unattended)
+          fi
+
+          python cloud_runner.py "${args[@]}"
+
+      - name: Upload generated clips
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: generated-clips-${{ github.run_number }}
           path: output/
+          if-no-files-found: ignore
           retention-days: 14
 
-      - name: Upload State Snapshot Artifact
+      - name: Upload cloud state snapshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cloud-state-${{ github.run_number }}
-          path: |
-            cloud_state/
+          path: cloud_state/
+          if-no-files-found: ignore
           retention-days: 30
