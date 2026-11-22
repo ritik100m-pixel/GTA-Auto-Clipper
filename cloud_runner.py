@@ -108,6 +108,7 @@ class CloudBatchRunner:
             "batch_id": batch_id,
             "worker_id": self.worker_id,
             "jobs_claimed": 0,
+            "jobs_skipped_unauthorized": 0,
             "clips_generated": 0,
             "clips_published": 0,
             "clips_skipped_unauthorized": 0,
@@ -156,11 +157,26 @@ class CloudBatchRunner:
                 job_id = job["id"]
                 payload = job.get("payload", {})
                 url = payload.get("url")
+                channel_id = payload.get("channel_id")
+
+                # Queue state is persistent and may outlive a creator permission
+                # change. Re-check authorization immediately before every capture.
+                if (
+                    not channel_id
+                    or payload.get("gameplay_verified") is not True
+                    or not all(
+                        self.policy.is_authorized(channel_id, required_scope=scope)
+                        for scope in ("record", "clip")
+                    )
+                ):
+                    stats["jobs_skipped_unauthorized"] += 1
+                    self.queue.complete(job_id, self.worker_id)
+                    print(f"Skipped queued job {job_id}: source is no longer authorized.")
+                    continue
 
                 print(f"Claimed job {job_id} for stream: {url}")
                 try:
                     # Determine stable session
-                    channel_id = payload.get("channel_id")
                     sess_id = recording_session_id(channel_id or url)
                     session = RecordingSession(self.recordings_dir, session_id=sess_id)
 
