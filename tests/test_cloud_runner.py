@@ -255,6 +255,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
                 "channel": "VideoCreator", "credit": "VideoCreator",
                 "title": "Reviewed GTA gameplay", "gameplay_verified": True,
                 "source_type": "youtube_video",
+                "rights_confirmed_by_user": True,
             },
             authorized=True,
         )
@@ -287,7 +288,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         download.assert_called_once()
         split.assert_called_once()
         process.assert_called_once()
-
+        self.assertIsNone(process.call_args.args[6])
 
 if __name__ == "__main__":
     unittest.main()
