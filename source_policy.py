@@ -37,7 +37,15 @@ class SourcePolicy:
 
         if not isinstance(data, dict) or not isinstance(data.get("sources", {}), dict):
             raise ValueError("GTA source allowlist must be a JSON object with a 'sources' object")
-        self.sources = data.get("sources", {})
+        sources = data.get("sources", {})
+        for channel_id, entry in sources.items():
+            if not isinstance(channel_id, str) or not isinstance(entry, dict):
+                raise ValueError("Each source allowlist entry must be an object keyed by channel ID")
+            if entry.get("channel_id", channel_id) != channel_id:
+                raise ValueError(f"Source allowlist key does not match channel_id: {channel_id}")
+            if not isinstance(entry.get("permission_scope", []), list):
+                raise ValueError(f"permission_scope must be a list for source {channel_id}")
+        self.sources = sources
         return self
 
     def save(self):
@@ -53,7 +61,7 @@ class SourcePolicy:
         os.replace(temp_name, self.policy_path)
 
     def add_source(self, channel_id, channel_name, *,
-                   permission_status="authorized",
+                   permission_status="pending",
                    permission_scope=None,
                    proof_reference=None,
                    credit=None,
@@ -67,7 +75,7 @@ class SourcePolicy:
 
         cid = str(channel_id).strip()
         now = _utc_now()
-        scope = list(permission_scope or ["record", "clip", "publish"])
+        scope = list(["record", "clip"] if permission_scope is None else permission_scope)
 
         entry = {
             "channel_id": cid,
@@ -120,6 +128,8 @@ class SourcePolicy:
         # Creator permission alone does not establish that the source is GTA
         # gameplay. Require an explicit one-time visual source review as well.
         if entry.get("gameplay_verified") is not True:
+            return False
+        if status == "authorized" and not (entry.get("proof_reference") or entry.get("notes")):
             return False
         scopes = entry.get("permission_scope", [])
         if required_scope and required_scope not in scopes:
