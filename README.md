@@ -16,7 +16,7 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 - Resets audio and video timestamps before burning the captions.
 - Masks swear words and sexual words in the burned-in captions (for example `s***`) so platforms do not limit the clip; the original audio is unchanged.
 - Saves MP4 and JSON metadata in `output/`. It never posts as part of clipping.
-- Schedules reviewed clips through Zernio by default. Optional unattended scheduling is available after account setup and with a standing source-rights policy; dry-run is the default.
+- Local clipping only writes MP4 and JSON files. Optional publishing adapters are separate. The cloud workflow uses the direct YouTube API route and keeps publishing disabled/dry-run until explicitly configured.
 
 ## Cloud automation
 
