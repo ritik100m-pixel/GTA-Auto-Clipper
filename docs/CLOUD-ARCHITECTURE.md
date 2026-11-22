@@ -119,7 +119,7 @@ After the workflow is merged into the default branch:
 3. Leave dry-run enabled and publishing disabled.
 4. Check the run summary and inspect the generated-clips artifact.
 
-With no authorized source configured, a successful first run is expected to report no authorized streams and produce no clips. This confirms the default safety gate without capturing anyone's footage.
+With no authorized source configured, a successful first run must not capture or publish anything. If the YouTube API key is absent, discovery is skipped; if it is present, candidates are checked and none are enqueued. This confirms the default safety gate without capturing anyone's footage.
 
 ## Runtime, persistence, and storage
 
