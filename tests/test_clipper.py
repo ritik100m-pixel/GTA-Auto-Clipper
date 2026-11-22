@@ -20,7 +20,7 @@ from recording_session import RecordingSession
 
 
 class ClipperReleaseTests(unittest.TestCase):
-    def test_run_recovery_returns_number_of_clips_not_chunks(self):
+    def test_run_recovery_returns_processed_chunk_count(self):
         session = MagicMock()
         session.claim_next.side_effect = [{"id": "chunk-1"}, None]
         outputs = [("clip-a.mp4", "clip-a.json"), ("clip-b.mp4", "clip-b.json")]
