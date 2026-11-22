@@ -55,7 +55,7 @@ class CloudBatchRunner:
 
         self.worker_id = f"worker-cloud-{uuid.uuid4().hex[:8]}"
 
-    def run_discovery_and_enqueue(self, query="GTA 6 gameplay", max_results=10, api_key=None):
+    def run_discovery_and_enqueue(self, query="GTA 6 gameplay", max_results=10, api_key=None, include_creator_live=True):
         """Find streams, enforce copyright allowlist, and enqueue authorized streams."""
         key = api_key or os.environ.get("YOUTUBE_API_KEY")
         if not key:
@@ -74,11 +74,12 @@ class CloudBatchRunner:
             if self.policy.is_authorized(source.get("channel_id"), "record")
             and self.policy.is_authorized(source.get("channel_id"), "clip")
         ]
-        try:
-            creator_lives = find_channel_live_streams(configured, key, max_per_channel=3)
-        except Exception as exc:
-            print(f"Configured-channel live discovery encountered error: {type(exc).__name__}: {exc}")
-            creator_lives = []
+        creator_lives = []
+        if include_creator_live:
+            try:
+                creator_lives = find_channel_live_streams(configured, key, max_per_channel=3)
+            except Exception as exc:
+                print(f"Configured-channel live discovery encountered error: {type(exc).__name__}: {exc}")
         known_urls = {item.get("url") for item in candidates}
         candidates.extend(item for item in creator_lives if item.get("url") not in known_urls)
 
@@ -220,7 +221,7 @@ class CloudBatchRunner:
                     now = time.time()
                     if now >= next_discovery_at:
                         print("Queue is idle; searching again for newly started live streams.")
-                        self.run_discovery_and_enqueue(api_key=api_key)
+                        self.run_discovery_and_enqueue(api_key=api_key, include_creator_live=False)
                         next_discovery_at = time.time() + 15 * 60
                         continue
 
