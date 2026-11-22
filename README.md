@@ -1,6 +1,6 @@
 # GTA Auto Clipper
 
-Find high-energy moments in live gameplay and render full-screen 9:16 clips with pop-up captions: each word pops in yellow the moment it is spoken. The clipper runs on your computer. A separate Zernio command can schedule the finished clip to your connected YouTube and Instagram accounts.
+Turn one gameplay video into vertical YouTube Shorts in the cloud. The primary workflow accepts an Unlisted YouTube video from your own channel, finds strong moments, renders 9:16 clips with captions, and can schedule them to YouTube. Temporary source and clip files are deleted after each run. See [docs/DAILY-GAMEPLAY-WORKFLOW.md](docs/DAILY-GAMEPLAY-WORKFLOW.md) for setup.
 
 The software is free and MIT-licensed. The optional AI workflow guide and prompt pack are a separate digital product.
 
@@ -19,13 +19,17 @@ The software is free and MIT-licensed. The optional AI workflow guide and prompt
 - Saves MP4 and JSON metadata in `output/`. It never posts as part of clipping.
 - Local clipping only writes MP4 and JSON files. Optional publishing adapters are separate. The cloud workflow uses the direct YouTube API route and keeps publishing disabled/dry-run until explicitly configured.
 
-## Cloud automation
+## Daily cloud workflow
 
-The repository includes a GitHub Actions cloud workflow that can discover authorized livestreams and recent regular uploads from configured creators, capture/process eligible footage, and optionally schedule YouTube Shorts while your PC is off. A separate hourly workflow records public view/like/comment snapshots for videos uploaded by this system. It runs in bounded batches, not continuously. The default is fail-closed: no source channels are configured, capture is blocked until a source has explicit recording/clipping permission and a gameplay review, and publishing is disabled/dry-run by default.
+The primary GitHub Actions workflow processes one gameplay video you submit per run. Upload your recording to your own YouTube channel as Unlisted, then open **Actions → Daily Gameplay Video to Shorts → Run workflow** and paste its URL. The configured `GTA_OWNER_CHANNEL_ID` secret must match the video's channel.
 
-The posting-time analyser records public performance snapshots around 1h, 6h, 24h, and 48h after scheduling. The scheduler learns from actual 48-hour results and starts with neutral time-slot assumptions; it does not claim a best time before it has evidence. Snapshot timing is best-effort because GitHub schedules can be delayed and cache storage can be evicted. This is YouTube Data API public statistics, not private audience-retention/impressions analytics. Instagram Reels analytics are not implemented.
+The runner reuses the existing highlight detection, vertical 9:16 editing, captions, and measured scheduling code. It can upload and schedule Shorts through the direct YouTube Data API when OAuth is configured and unattended publishing is deliberately enabled. The default is dry-run with publishing disabled.
 
-See [docs/CLOUD-ARCHITECTURE.md](docs/CLOUD-ARCHITECTURE.md) for setup steps, required GitHub Secrets/Variables, source-policy format, storage limits, and safe publishing switches. Public clip artifacts are opt-in and require publish permission. Do not add creator channels until you have permission to record, edit, and publish their footage.
+The raw downloaded video, chunks, generated MP4/JSON files, queue, and deduplication state are deleted at the end of every run. Only small performance/scheduling ledgers are kept in GitHub Actions cache to improve future posting-time recommendations. The original Unlisted source video in your YouTube account is not deleted.
+
+The older livestream discovery and creator-allowlist code remains available in the repository but is no longer started by a scheduled clipping workflow. Creator channels can be added later with their explicit permissions.
+
+See [docs/DAILY-GAMEPLAY-WORKFLOW.md](docs/DAILY-GAMEPLAY-WORKFLOW.md) for setup, secrets, limits, and troubleshooting.
 
 ## Install
 

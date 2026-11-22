@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from smart_scheduler import (
@@ -55,19 +55,22 @@ class SmartSchedulerTests(unittest.TestCase):
         self.assertEqual(rec["slot_samples"], 0)
 
     def test_learned_slot_scores_higher_on_exploitation(self):
-        # Train scheduler: Sunday 20:00 IST gets massive engagement
-        # 2026-11-22 is Sunday. 20:00 IST is 14:30 UTC.
+        # Train a slot that is guaranteed to fall inside the scheduler's
+        # next-48-hour candidate horizon. Fixed historical dates become stale.
+        target_utc = (datetime.now(timezone.utc) + timedelta(hours=24)).replace(
+            minute=30, second=0, microsecond=0
+        )
+        target_local = target_utc.astimezone(timezone(timedelta(hours=5, minutes=30)))
         for i in range(5):
             self.ledger.record_clip_performance(
-                f"clip-sunday-{i}", "2026-11-22T14:30:00+00:00", "police_chase",
+                f"clip-trained-{i}", target_utc.isoformat(), "police_chase",
                 {"views": 50000, "engaged_views": 35000, "likes": 4000, "comments": 500}
             )
 
         slots, cat_slots = self.scheduler.get_slot_stats()
-        # Local day 6 (Sunday), hour 20
-        sunday_20_scores = slots.get((6, 20), [])
-        self.assertEqual(len(sunday_20_scores), 5)
-        self.assertGreater(sum(sunday_20_scores) / 5, 10000)
+        trained_slot_scores = slots.get((target_local.weekday(), target_local.hour), [])
+        self.assertEqual(len(trained_slot_scores), 5)
+        self.assertGreater(sum(trained_slot_scores) / 5, 10000)
 
         # Force exploitation
         rec = self.scheduler.recommend_publish_time(category="police_chase", epsilon=0.0)
