@@ -28,6 +28,12 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install numpy requests
 
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Lint GitHub Actions workflows
+        run: "$(go env GOPATH)/bin/actionlint"
+
       - name: Run persistent queue tests
         run: python -m unittest tests.test_cloud_queue -v
 
