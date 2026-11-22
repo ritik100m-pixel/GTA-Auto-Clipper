@@ -48,7 +48,7 @@ class CloudBatchRunner:
         self.policy = SourcePolicy(self.state_dir / "source_allowlist.json")
         self.scheduler = SmartScheduler(ledger_path=str(self.state_dir / "analytics_ledger.json"))
         self.publisher = UnifiedPublisher()
-        self.deduplicator = ClipDeduplicator()
+        self.deduplicator = ClipDeduplicator(state_path=self.state_dir / "dedupe_ledger.json")
 
         self.worker_id = f"worker-cloud-{uuid.uuid4().hex[:8]}"
 
@@ -196,6 +196,7 @@ class CloudBatchRunner:
                         payload.get("title", "GTA Live Stream"),
                         url,
                         gameplay_confirmed=bool(payload.get("gameplay_verified")),
+                        deduplicator=self.deduplicator,
                     )
                     generated_outputs.extend(rec_outputs)
                     stats["clips_generated"] += rec_count
@@ -241,6 +242,7 @@ class CloudBatchRunner:
                                 },
                                 payload.get("title", "GTA Stream"), url,
                                 gameplay_confirmed=bool(payload.get("gameplay_verified")),
+                                deduplicator=self.deduplicator,
                             )
                             generated_outputs.extend(outputs)
                             stats["clips_generated"] += count
@@ -268,6 +270,7 @@ class CloudBatchRunner:
                     )
 
                 unique_metadata = sorted({str(Path(pair[1]).resolve()) for pair in generated_outputs})
+                scheduled_times = []
                 for meta_name in unique_metadata:
                     meta_path = Path(meta_name)
                     try:
@@ -287,8 +290,11 @@ class CloudBatchRunner:
                             continue
 
                         cat = meta.get("category", "high_action")
-                        rec_slot = self.scheduler.recommend_publish_time(category=cat, epsilon=0.20)
+                        rec_slot = self.scheduler.recommend_publish_time(
+                            category=cat, epsilon=0.20, existing_scheduled=scheduled_times
+                        )
                         scheduled_time = rec_slot["recommended_time_utc"]
+                        scheduled_times.append(scheduled_time)
                         pub_res = self.publisher.publish_clip(
                             meta_path, scheduled_for=scheduled_time, dry_run=dry_run,
                             unattended=unattended,
