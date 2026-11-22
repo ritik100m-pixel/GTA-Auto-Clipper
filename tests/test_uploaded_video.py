@@ -47,6 +47,16 @@ class UploadedVideoTests(unittest.TestCase):
                 info_reader=lambda _: self.info, runner_factory=FakeRunner,
             )
 
+    def test_rejects_non_youtube_url_before_metadata_lookup(self):
+        called = []
+        with self.assertRaisesRegex(ValueError, "Only HTTPS YouTube"):
+            process_uploaded_video(
+                "https://example.com/video.mp4", "UC-owner",
+                confirm_rights=True, info_reader=lambda _: called.append(True),
+                runner_factory=FakeRunner,
+            )
+        self.assertEqual(called, [])
+
     def test_rejects_video_from_a_different_channel(self):
         with self.assertRaisesRegex(PermissionError, "does not match"):
             process_uploaded_video(
