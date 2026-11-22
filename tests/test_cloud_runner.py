@@ -73,7 +73,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
             authorized=True
         )
 
-        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 0)):
+        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 1)):
             stats = self.runner.run_batch(
                 max_duration_seconds=30, target_clips=1, dry_run=True,
                 enable_publishing=True,
@@ -108,7 +108,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
              "channel": "AuthChannel", "credit": "AuthChannel", "gameplay_verified": True},
             authorized=True,
         )
-        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 0)):
+        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 1)):
             stats = self.runner.run_batch(max_duration_seconds=30, target_clips=1, dry_run=True)
         self.assertEqual(stats["clips_published"], 0)
         saved = json.loads(dummy_json.read_text(encoding="utf-8"))
@@ -134,7 +134,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
              "channel": "PublishCreator", "gameplay_verified": True},
             authorized=True,
         )
-        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 0)):
+        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 1)):
             stats = self.runner.run_batch(
                 max_duration_seconds=30, target_clips=1,
                 dry_run=False, enable_publishing=True,
