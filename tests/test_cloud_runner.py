@@ -217,5 +217,77 @@ class CloudBatchRunnerTests(unittest.TestCase):
         recover.assert_not_called()
 
 
+    def test_discovery_queues_only_individually_reviewed_vods(self):
+        self.runner.policy.add_source(
+            "UC-vod-approved", "VideoCreator", permission_status="authorized",
+            permission_scope=["record", "clip"], proof_reference="Written permission",
+            gameplay_verified=True,
+        )
+        self.runner.policy.sources["UC-vod-approved"]["approved_video_ids"] = ["vod-approved"]
+        self.runner.policy.save()
+        video = {
+            "video_id": "vod-approved", "channel_id": "UC-vod-approved",
+            "channel": "VideoCreator", "title": "Reviewed GTA gameplay",
+            "url": "https://www.youtube.com/watch?v=vod-approved",
+            "published_at": "2026-11-22T10:00:00+00:00",
+        }
+        with patch("find_streams.find_streams", return_value=[]), \\
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \\
+             patch("cloud_runner.find_channel_videos", return_value=[video]):
+            jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_video")
+        self.assertEqual(jobs[0]["payload"]["video_id"], "vod-approved")
+
+    def test_cloud_runner_processes_approved_vod_as_finite_video(self):
+        self.runner.policy.add_source(
+            "UC-vod-run", "VideoCreator", permission_status="authorized",
+            permission_scope=["record", "clip"], proof_reference="Written permission",
+            gameplay_verified=True,
+        )
+        self.runner.policy.sources["UC-vod-run"]["approved_video_ids"] = ["vod-run"]
+        self.runner.policy.save()
+        self.runner.queue.enqueue(
+            "capture_and_clip", "vod-run-job",
+            {
+                "url": "https://www.youtube.com/watch?v=vod-run",
+                "video_id": "vod-run", "channel_id": "UC-vod-run",
+                "channel": "VideoCreator", "credit": "VideoCreator",
+                "title": "Reviewed GTA gameplay", "gameplay_verified": True,
+                "source_type": "youtube_video",
+            },
+            authorized=True,
+        )
+
+        def fake_download(url, destination_dir, **kwargs):
+            directory = Path(destination_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            source = directory / "source.mp4"
+            source.write_bytes(b"source")
+            return {"id": "vod-run", "channel_id": "UC-vod-run", "title": "Reviewed GTA gameplay"}, source
+
+        def fake_split(source, chunks_dir, **kwargs):
+            directory = Path(chunks_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            chunk = directory / "chunk_00000.ts"
+            chunk.write_bytes(b"chunk")
+            return [chunk]
+
+        clip_path = self.output_dir / "vod-clip.mp4"
+        metadata_path = self.output_dir / "vod-clip.json"
+        clip_path.write_bytes(b"clip")
+        metadata_path.write_text(json.dumps({"test": False}), encoding="utf-8")
+
+        with patch("cloud_runner.download_youtube_video", side_effect=fake_download) as download, \\
+             patch("cloud_runner.split_video", side_effect=fake_split) as split, \\
+             patch("cloud_runner.process_chunk", return_value=([(str(clip_path), str(metadata_path))], 1)) as process:
+            stats = self.runner.run_batch(max_duration_seconds=30, target_clips=1)
+
+        self.assertEqual(stats["clips_generated"], 1)
+        download.assert_called_once()
+        split.assert_called_once()
+        process.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
