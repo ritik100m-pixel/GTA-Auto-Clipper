@@ -143,8 +143,29 @@ jobs:
 
           python cloud_runner.py "${args[@]}"
 
+      - name: Verify public artifact permission
+        if: success() && (inputs.upload_output_artifact == true || vars.GTA_UPLOAD_OUTPUT_ARTIFACTS == 'true')
+        env:
+          GTA_SOURCE_ALLOWLIST_JSON: ${{ secrets.GTA_SOURCE_ALLOWLIST_JSON }}
+        run: |
+          python - <<'PY'
+          import glob
+          import json
+          from source_policy import SourcePolicy
+
+          policy = SourcePolicy()
+          for path in glob.glob("output/*.json"):
+              with open(path, "r", encoding="utf-8") as f:
+                  metadata = json.load(f)
+              channel_id = metadata.get("source_channel_id")
+              if metadata.get("test") or not policy.is_authorized(channel_id, "publish"):
+                  raise SystemExit(
+                      f"Refusing public artifact: {path} has no active publish permission."
+                  )
+          PY
+
       - name: Upload generated clips (public artifact; opt-in only)
-        if: always() && (inputs.upload_output_artifact == true || vars.GTA_UPLOAD_OUTPUT_ARTIFACTS == 'true')
+        if: success() && (inputs.upload_output_artifact == true || vars.GTA_UPLOAD_OUTPUT_ARTIFACTS == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: generated-clips-${{ github.run_number }}
