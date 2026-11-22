@@ -683,6 +683,8 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                     json.dump({
                         "video": name + ".mp4", "channel": "gta", "source_url": source_url,
                         "streamer": who.get("name", "local source"), "credit": who.get("credit"), "stream_title": title,
+                        "source_channel_id": who.get("channel_id"),
+                        "source_gameplay_verified": bool(who.get("gameplay_verified")) ,
                         "score": score, "transcript": text,
                         "category": cat_info.get("category", "high_action"),
                         "category_confidence": cat_info.get("confidence", 0.5),
