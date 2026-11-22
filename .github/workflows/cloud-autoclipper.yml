@@ -154,13 +154,26 @@ jobs:
           from source_policy import SourcePolicy
 
           policy = SourcePolicy()
-          for path in glob.glob("output/*.json"):
+          metadata_paths = glob.glob("output/*.json")
+          video_paths = glob.glob("output/*.mp4")
+          metadata_stems = {path.rsplit("/", 1)[-1][:-5] for path in metadata_paths}
+          video_stems = {path.rsplit("/", 1)[-1][:-4] for path in video_paths}
+          if metadata_stems != video_stems:
+              raise SystemExit("Refusing public artifact: every MP4 must have matching JSON metadata.")
+          for path in metadata_paths:
               with open(path, "r", encoding="utf-8") as f:
                   metadata = json.load(f)
               channel_id = metadata.get("source_channel_id")
-              if metadata.get("test") or not policy.is_authorized(channel_id, "publish"):
+              if (
+                  metadata.get("test")
+                  or not policy.is_authorized(channel_id, "publish")
+                  or (
+                      not metadata.get("approved")
+                      and os.environ.get("GTA_UNATTENDED_POSTS") != "1"
+                  )
+              ):
                   raise SystemExit(
-                      f"Refusing public artifact: {path} has no active publish permission."
+                      f"Refusing public artifact: {path} lacks explicit source publish permission/approval."
                   )
           PY
 
