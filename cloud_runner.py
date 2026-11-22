@@ -102,6 +102,7 @@ class CloudBatchRunner:
         work_budget = max(1, max_duration_seconds - min(300, max_duration_seconds * 0.10))
         work_deadline = start_time + work_budget
         generated_outputs = []
+        next_discovery_at = start_time + 15 * 60
         print(f"=== Starting Cloud Batch {batch_id} (Worker: {self.worker_id}) ===")
 
         stats = {
@@ -153,8 +154,25 @@ class CloudBatchRunner:
 
                 job = self.queue.claim_next(self.worker_id, lease_seconds=1200)
                 if not job:
-                    print("No more authorized jobs available in the queue.")
-                    break
+                    api_key = os.environ.get("YOUTUBE_API_KEY")
+                    if not api_key:
+                        print("No queued jobs and YOUTUBE_API_KEY is not configured; ending batch.")
+                        break
+
+                    now = time.time()
+                    if now >= next_discovery_at:
+                        print("Queue is idle; searching again for newly started live streams.")
+                        self.run_discovery_and_enqueue(api_key=api_key)
+                        next_discovery_at = time.time() + 15 * 60
+                        continue
+
+                    wait_seconds = min(
+                        30,
+                        max(1, next_discovery_at - now),
+                        max(1, work_deadline - now),
+                    )
+                    time.sleep(wait_seconds)
+                    continue
 
                 stats["jobs_claimed"] += 1
                 job_id = job["id"]
