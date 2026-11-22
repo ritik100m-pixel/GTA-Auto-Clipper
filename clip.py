@@ -611,7 +611,7 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                   clip_len=30, top=1, min_score=DEFAULT_MIN_SCORE, lead_in=6,
                   layout="fill", crop=False, moment_source="chat",
                   gameplay_confirmed=False, chat=None, chat_source="disabled",
-                  chat_fallback=None, n_clips_start=0):
+                  chat_fallback=None, n_clips_start=0, deduplicator=None):
     """Process a chunk into vertical clips and record outcomes in the session."""
     if session is not None and isinstance(chunk_row, dict):
         chunk_path = session.resolve_chunk_path(chunk_row)
@@ -646,7 +646,17 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
         moments, words = pick_moments(c, clip_len, top, min_score, lead_in,
                                       chunk_chat, chunk_moment_source)
         outputs = []
+        dedupe_records = []
         for score, start in moments:
+            text = " ".join(w[2] for w in words if start <= w[0] < start + clip_len)
+            source_start_epoch = chunk_start_epoch + start
+            if deduplicator:
+                duplicate, reason = deduplicator.is_duplicate(
+                    source_start_epoch, text, source_id=who.get("channel_id")
+                )
+                if duplicate:
+                    print(f"  skipped duplicate moment ({reason})")
+                    continue
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             name = f"gta-{stamp}-{n_clips_start + len(outputs) + 1}"
             mp4 = os.path.join(out_dir, name + ".mp4")
@@ -663,7 +673,6 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
             if cut(c, words, start, clip_len, mp4, who.get("credit"), crop=smart_crop,
                    crop_offset=crop_offset, source_roi=source_roi,
                    caption_margin_v=caption_margin_v, layout=layout_mode, pan_keys=pan_keys):
-                text = " ".join(w[2] for w in words if start <= w[0] < start + clip_len)
                 chat_summary = summarize_chat_window(chunk_chat, start, clip_len)
                 if chunk_moment_source == "chat":
                     selection_signals = ["live-chat"]
@@ -684,6 +693,7 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                         "video": name + ".mp4", "channel": "gta", "source_url": source_url,
                         "streamer": who.get("name", "local source"), "credit": who.get("credit"), "stream_title": title,
                         "source_channel_id": who.get("channel_id"),
+                        "source_start_epoch": round(source_start_epoch, 3),
                         "source_gameplay_verified": bool(who.get("gameplay_verified")),
                         "score": score, "transcript": text,
                         "category": cat_info.get("category", "high_action"),
@@ -712,6 +722,7 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                         "approved": False, "posted": {}, "test": who.get("test", False),
                     }, meta, indent=2, ensure_ascii=False)
                 outputs.append((mp4, json_path))
+                dedupe_records.append((source_start_epoch, text, name))
                 print(f"  clip {name}.mp4  score {score}")
 
         if session is not None and chunk_id is not None:
@@ -726,6 +737,12 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                         except OSError:
                             pass
                 raise RuntimeError("chunk lease expired before completion; outputs removed for safe recovery")
+        if deduplicator:
+            for start_epoch, transcript, clip_id in dedupe_records:
+                deduplicator.register_clip(
+                    start_epoch, transcript, clip_id=clip_id,
+                    source_id=who.get("channel_id"),
+                )
         return outputs, len(outputs)
     except Exception as exc:
         if session is not None and chunk_id is not None:
@@ -737,7 +754,7 @@ def run_recovery(session, worker_id, out_dir, who, title, source_url,
                  clip_len=30, top=1, min_score=DEFAULT_MIN_SCORE, lead_in=6,
                  layout="fill", crop=False, moment_source="chat",
                  gameplay_confirmed=False, chat=None, chat_source="disabled",
-                 chat_fallback=None, n_clips_start=0):
+                 chat_fallback=None, n_clips_start=0, deduplicator=None):
     """Recover and process all pending or abandoned chunks in a persistent session."""
     session.recover_unregistered_chunks()
     processed_count = 0
@@ -753,6 +770,7 @@ def run_recovery(session, worker_id, out_dir, who, title, source_url,
             gameplay_confirmed=gameplay_confirmed, chat=chat,
             chat_source=chat_source, chat_fallback=chat_fallback,
             n_clips_start=n_clips_start + len(all_outputs),
+            deduplicator=deduplicator,
         )
         all_outputs.extend(outputs)
         processed_count += 1
