@@ -4,7 +4,7 @@
 
 The GitHub Actions workflow runs the existing Python clipper on GitHub-hosted Ubuntu runners. Your PC does not need to stay on while a workflow is running. The workflow is scheduled twice daily, at 09:30 and 21:30 India time, and can also be started manually.
 
-Each batch defaults to 5 hours. The workflow has a 5 hour 45 minute job timeout and accepts a maximum requested duration of 330 minutes, leaving time for cleanup and artifact upload. GitHub's hard maximum for a GitHub-hosted job is 6 hours. Scheduled workflows are best-effort and may be delayed by GitHub.
+Each batch defaults to 5 hours. The workflow has a 5 hour 45 minute job timeout and accepts a maximum requested duration of 330 minutes, leaving time for cleanup and artifact upload. GitHub's hard maximum for a GitHub-hosted job is 6 hours. When the YouTube API key is configured and the queue is idle, the runner searches again for newly started live streams every 15 minutes. Scheduled workflows are best-effort and may be delayed by GitHub.
 
 This repository is public. GitHub documents standard GitHub-hosted runners as free for public repositories. This does not make every external service free: YouTube API quotas, OAuth requirements, GitHub artifact/cache storage limits, and platform rules still apply.
 
