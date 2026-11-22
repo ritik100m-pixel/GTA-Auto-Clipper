@@ -739,10 +739,15 @@ def process_chunk(session, chunk_row, worker_id, out_dir, who, title, source_url
                 raise RuntimeError("chunk lease expired before completion; outputs removed for safe recovery")
         if deduplicator:
             for start_epoch, transcript, clip_id in dedupe_records:
-                deduplicator.register_clip(
-                    start_epoch, transcript, clip_id=clip_id,
-                    source_id=who.get("channel_id"),
-                )
+                try:
+                    deduplicator.register_clip(
+                        start_epoch, transcript, clip_id=clip_id,
+                        source_id=who.get("channel_id"),
+                    )
+                except OSError as exc:
+                    # A cache write failure must not discard clips already
+                    # rendered and committed to the recording session.
+                    print(f"  warning: could not persist deduplication history: {exc}")
         return outputs, len(outputs)
     except Exception as exc:
         if session is not None and chunk_id is not None:
