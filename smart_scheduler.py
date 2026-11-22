@@ -135,10 +135,6 @@ class SmartScheduler:
         hour = local_dt.hour
 
         prior = DEFAULT_HOUR_PRIORS.get(hour, 1.0)
-        # Weekend boost (Saturday=5, Sunday=6)
-        if day in (5, 6):
-            prior *= 1.25
-
         if slots is None or cat_slots is None:
             slots, cat_slots = self.get_slot_stats()
 
