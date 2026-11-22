@@ -157,7 +157,7 @@ class CloudBatchRunner:
 
     def run_batch(self, max_duration_seconds=21600, target_clips=10,
                   single_url=None, dry_run=False, enable_publishing=False,
-                  unattended=False):
+                  unattended=False, discover_when_idle=True):
         """Execute one complete automated cloud batch cycle within execution bounds."""
         batch_id = self.queue.start_batch(self.worker_id, duration_seconds=max_duration_seconds)
         start_time = time.time()
@@ -229,6 +229,9 @@ class CloudBatchRunner:
 
                 job = self.queue.claim_next(self.worker_id, lease_seconds=1200)
                 if not job:
+                    if not discover_when_idle:
+                        print("No more submitted-video jobs remain; ending this one-video batch.")
+                        break
                     api_key = os.environ.get("YOUTUBE_API_KEY")
                     if not api_key:
                         print("No queued jobs and YOUTUBE_API_KEY is not configured; ending batch.")
@@ -298,12 +301,15 @@ class CloudBatchRunner:
                                 "gameplay_verified": True,
                                 "test": False,
                             }
+                            # Do not publish the Unlisted source URL in the public Short description
+                            # for a user-submitted owner-channel video.
+                            source_reference = None if payload.get("rights_confirmed_by_user") else url
                             for chunk_path in chunks:
                                 outputs, count = process_chunk(
                                     None, str(chunk_path), self.worker_id,
                                     str(self.output_dir), who,
                                     payload.get("title") or info.get("title", "YouTube video"),
-                                    url,
+                                    source_reference,
                                     clip_len=30, top=1, lead_in=6,
                                     layout="fill", moment_source="audio",
                                     gameplay_confirmed=True,

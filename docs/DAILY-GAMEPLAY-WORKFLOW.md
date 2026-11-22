@@ -49,7 +49,7 @@ The safe default is dry-run with publishing disabled. The script rejects unatten
 - Deletes the original downloaded copy, chunks, generated MP4/JSON files, queue database, deduplication state, and other temporary processing data at the end of the job, including after failure.
 - Keeps only the small YouTube performance/scheduling ledgers in GitHub Actions cache so future runs can learn from published results. Cache is best-effort and can be evicted.
 
-The source video uploaded to YouTube is not deleted. The workflow deletes its temporary runner copy only. A failed run does not publish anything unless YouTube has already accepted an upload; check the YouTube Studio dashboard before retrying after an ambiguous network failure.
+The source video uploaded to YouTube is not deleted. The workflow deletes its temporary runner copy only. Its Unlisted source URL is masked in workflow logs and is deliberately omitted from the public Shorts description. A failed run does not publish anything unless YouTube has already accepted an upload; check the YouTube Studio dashboard before retrying after an ambiguous network failure.
 
 ## Runtime and cost
 

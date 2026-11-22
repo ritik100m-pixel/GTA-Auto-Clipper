@@ -127,6 +127,7 @@ def process_uploaded_video(
             dry_run=bool(dry_run),
             enable_publishing=bool(enable_publishing),
             unattended=bool(unattended),
+            discover_when_idle=False,
         )
         print(json.dumps(stats, indent=2))
         if stats.get("errors"):
