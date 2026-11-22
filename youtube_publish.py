@@ -244,13 +244,15 @@ class YouTubePublisher:
         if not video_id:
             raise RuntimeError(f"Upload completed but no video ID was returned: {result}")
 
-        # Update metadata atomically
+        # Persist the real video ID atomically for duplicate protection.
         metadata["youtube_video_id"] = video_id
         metadata["youtube_publish_status"] = "scheduled" if status.get("publishAt") else "uploaded"
         metadata["youtube_scheduled_for"] = status.get("publishAt")
         metadata["youtube_uploaded_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
-        with open(m_path, "w", encoding="utf-8") as f:
+        temp_metadata_path = m_path.with_suffix(m_path.suffix + ".tmp")
+        with open(temp_metadata_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
+        os.replace(temp_metadata_path, m_path)
 
         return {
             "id": video_id,
