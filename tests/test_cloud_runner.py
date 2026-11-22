@@ -72,7 +72,8 @@ class CloudBatchRunnerTests(unittest.TestCase):
             )
 
         self.assertEqual(stats["jobs_claimed"], 1)
-        self.assertEqual(stats["clips_published"], 1)
+        self.assertEqual(stats["clips_published"], 0)
+        self.assertEqual(stats["clips_previewed"], 1)
 
         with open(dummy_json, "r", encoding="utf-8") as f:
             saved = json.load(f)
