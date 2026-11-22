@@ -158,8 +158,8 @@ class RecordingSessionTests(unittest.TestCase):
         self.assertEqual(outputs[0]["video"], str(video1.resolve()))
         self.assertEqual(outputs[1]["metadata"], str(metadata2.resolve()))
 
-    def test_chunk_can_complete_with_zero_outputs(self):
-        _, _, chunk = self._chunk()
+    def test_chunk_can_complete_with_zero_outputs_and_prunes_raw_media(self):
+        _, raw_chunk, chunk = self._chunk()
         self.session.claim_next("worker-a")
 
         self.assertTrue(self.session.complete_chunk(
@@ -169,6 +169,7 @@ class RecordingSessionTests(unittest.TestCase):
         saved = self.session.get_chunk(chunk["id"])
         self.assertEqual(saved["status"], "completed")
         self.assertEqual(saved["outputs_json"], "[]")
+        self.assertFalse(raw_chunk.exists())
 
     def test_chunk_becomes_failed_after_maximum_attempts(self):
         _, _, chunk = self._chunk()
