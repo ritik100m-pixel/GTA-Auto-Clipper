@@ -87,7 +87,7 @@ jobs:
         run: |
           DURATION_MINUTES="${{ inputs.duration_minutes || '300' }}"
           TARGET_CLIPS="${{ inputs.target_clips || '10' }}"
-          DRY_RUN_INPUT="${{ inputs.dry_run || 'true' }}"
+          DRY_RUN_INPUT="${{ inputs.dry_run }}"
           ENABLE_PUBLISHING_INPUT="${{ inputs.enable_publishing || 'false' }}"
           UNATTENDED_INPUT="${{ inputs.unattended || 'false' }}"
 
