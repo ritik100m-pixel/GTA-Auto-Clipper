@@ -268,6 +268,14 @@ class CloudBatchRunner:
                     raise PermissionError(
                         "Unattended publishing requires the GTA_UNATTENDED_POSTS=1 secret."
                     )
+                if not dry_run and (
+                    self.publisher.provider != "youtube_direct"
+                    or not self.publisher.yt_publisher.is_configured
+                ):
+                    raise RuntimeError(
+                        "Real publishing is enabled, but direct YouTube OAuth is not fully configured. "
+                        "Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN."
+                    )
 
                 unique_metadata = sorted({str(Path(pair[1]).resolve()) for pair in generated_outputs})
                 scheduled_times = []
