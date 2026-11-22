@@ -203,7 +203,7 @@ class CloudBatchRunner:
 
                     # Recover any interrupted work
                     session.recover_unregistered_chunks()
-                    rec_outputs, rec_count = run_recovery(
+                    rec_outputs, _ = run_recovery(
                         session, self.worker_id, str(self.output_dir),
                         {
                             "name": payload.get("channel", "Streamer"),
