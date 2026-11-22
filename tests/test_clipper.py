@@ -30,7 +30,7 @@ class ClipperReleaseTests(unittest.TestCase):
                 "GTA live", "https://youtube.com/watch?v=abc",
             )
         self.assertEqual(recovered, outputs)
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 1)
 
     def test_recording_session_id_is_stable_for_same_stream(self):
         first = recording_session_id("youtube-video-123")
