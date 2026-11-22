@@ -78,3 +78,6 @@ jobs:
       - name: Run cloud runner tests
         run: python -m unittest tests.test_cloud_runner -v
 
+      - name: Run uploaded gameplay workflow tests
+        run: python -m unittest tests.test_uploaded_video -v
+
