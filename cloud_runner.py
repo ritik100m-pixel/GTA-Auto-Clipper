@@ -21,7 +21,7 @@ from pathlib import Path
 from cloud_queue import CloudQueue
 from source_policy import SourcePolicy
 from smart_scheduler import SmartScheduler
-from find_channel_videos import find_channel_videos
+from find_channel_videos import find_channel_videos, find_channel_live_streams
 from performance_tracker import VideoPerformanceLedger, collect_due_snapshots, feed_scheduler_from_48h
 from publisher import UnifiedPublisher
 from content_classifier import classify_clip_content, ClipDeduplicator
@@ -69,10 +69,23 @@ class CloudBatchRunner:
             print(f"Stream search encountered error: {type(exc).__name__}: {exc}")
             candidates = []
 
+        configured = [
+            source for source in self.policy.list_sources()
+            if self.policy.is_authorized(source.get("channel_id"), "record")
+            and self.policy.is_authorized(source.get("channel_id"), "clip")
+        ]
+        try:
+            creator_lives = find_channel_live_streams(configured, key, max_per_channel=3)
+        except Exception as exc:
+            print(f"Configured-channel live discovery encountered error: {type(exc).__name__}: {exc}")
+            creator_lives = []
+        known_urls = {item.get("url") for item in candidates}
+        candidates.extend(item for item in creator_lives if item.get("url") not in known_urls)
+
         authorized, unauthorized = self.policy.filter_streams(candidates, required_scope="record")
         authorized, missing_clip_scope = self.policy.filter_streams(authorized, required_scope="clip")
         unauthorized.extend(missing_clip_scope)
-        print(f"Discovery found {len(candidates)} streams: {len(authorized)} authorized for recording and clipping, {len(unauthorized)} skipped.")
+        print(f"Discovery found {len(candidates)} live streams: {len(authorized)} authorized for recording and clipping, {len(unauthorized)} skipped.")
 
         enqueued_jobs = []
         for stream in authorized:
@@ -96,11 +109,6 @@ class CloudBatchRunner:
             enqueued_jobs.append(job)
 
         # Also inspect public uploads playlists for explicitly configured sources.
-        configured = [
-            source for source in self.policy.list_sources()
-            if self.policy.is_authorized(source.get("channel_id"), "record")
-            and self.policy.is_authorized(source.get("channel_id"), "clip")
-        ]
         try:
             videos = find_channel_videos(configured, key, recent_days=14, max_per_channel=5)
         except Exception as exc:
