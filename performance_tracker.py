@@ -80,7 +80,7 @@ class VideoPerformanceLedger:
             for milestone in MILESTONES_HOURS:
                 key = str(milestone)
                 # Capture the first run after a milestone; allow a 72h catch-up.
-                if age_hours >= milestone and age_hours <= milestone + 72 and key not in snapshots:
+                if age_hours >= milestone and age_hours <= milestone + 2 and key not in snapshots:
                     due.append((video["video_id"], milestone))
         return due
 
@@ -144,3 +144,23 @@ def collect_due_snapshots(ledger, api_key, now=None):
             ledger.record_snapshot(video_id, milestone, stats[video_id], captured_at=now)
             recorded += 1
     return {"due": len(due), "recorded": recorded, "error": None}
+
+
+def feed_scheduler_from_48h(ledger, scheduler_ledger):
+    """Train posting-slot recommendations only from real 48-hour snapshots."""
+    imported = 0
+    for video in ledger.data["videos"].values():
+        snapshot = video.get("snapshots", {}).get("48")
+        if not snapshot or video.get("scheduler_recorded"):
+            continue
+        metrics = snapshot.get("metrics", {})
+        if not metrics:
+            continue
+        scheduler_ledger.record_clip_performance(
+            video["video_id"], video["published_at"], video.get("category", "general"), metrics
+        )
+        video["scheduler_recorded"] = True
+        imported += 1
+    if imported:
+        ledger.save()
+    return imported
