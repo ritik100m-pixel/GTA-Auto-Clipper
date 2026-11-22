@@ -123,7 +123,9 @@ def split_video(video_path, chunks_dir, *, chunk_seconds=90, runner=subprocess.r
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-i", str(source), "-map", "0:v:0", "-map", "0:a:0?",
-        "-c", "copy", "-f", "segment", "-segment_time", str(int(chunk_seconds)),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        "-f", "segment", "-segment_time", str(int(chunk_seconds)),
         "-reset_timestamps", "1", pattern,
     ]
     _run_checked(command, runner, "Could not split the downloaded video")
