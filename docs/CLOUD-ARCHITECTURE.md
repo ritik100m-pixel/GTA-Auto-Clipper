@@ -54,7 +54,7 @@ Every source entry must have:
 
 A channel-level gameplay review is a standing source check, not a computer-vision guarantee that every future livestream is gameplay. Do not enable mixed-content channels unless you can reliably verify their streams. Remove or revoke a source if its permission changes. Creator credit alone is not permission.
 
-The allowlist is supplied through the private GitHub Actions secret `GTA_SOURCE_ALLOWLIST_JSON`; it is not committed to the public repository. Example structure:
+The allowlist is supplied through the private GitHub Actions secret `GTA_SOURCE_ALLOWLIST_JSON`; it is not committed to the public repository, cached, or uploaded as an artifact. The workflow also removes any legacy cached allowlist before starting. Example structure:
 
 ```json
 {
