@@ -59,8 +59,8 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "published_at": "2026-11-22T10:00:00+00:00",
             "source_type": "youtube_video",
         }
-        with patch("find_streams.find_streams", return_value=[]), \\
-             patch("cloud_runner.find_channel_live_streams", return_value=[]), \\
+        with patch("find_streams.find_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
              patch("cloud_runner.find_channel_videos", return_value=[video]):
             jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
         self.assertEqual(jobs, [])
@@ -97,8 +97,8 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "url": "https://www.youtube.com/watch?v=vod456",
             "published_at": "2026-11-22T10:00:00+00:00",
         }
-        with patch("find_streams.find_streams", return_value=[]), \\
-             patch("cloud_runner.find_channel_live_streams", return_value=[]), \\
+        with patch("find_streams.find_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
              patch("cloud_runner.find_channel_videos", return_value=[video]):
             jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
         self.assertEqual(jobs, [])
