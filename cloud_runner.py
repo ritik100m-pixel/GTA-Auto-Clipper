@@ -111,6 +111,7 @@ class CloudBatchRunner:
             "jobs_skipped_unauthorized": 0,
             "clips_generated": 0,
             "clips_published": 0,
+            "clips_previewed": 0,
             "clips_skipped_unauthorized": 0,
             "errors": [],
         }
@@ -121,6 +122,8 @@ class CloudBatchRunner:
                 info = stream_info(single_url)
                 identity = source_identity(info)
                 channel_id = identity.get("channel_id")
+                if not info.get("is_live"):
+                    raise ValueError("Direct source is not currently live.")
                 if not channel_id or not all(
                     self.policy.is_authorized(channel_id, required_scope=scope)
                     for scope in ("record", "clip")
@@ -290,8 +293,12 @@ class CloudBatchRunner:
                             meta_path, scheduled_for=scheduled_time, dry_run=dry_run,
                             unattended=unattended,
                         )
-                        stats["clips_published"] += 1
-                        print(f"Scheduled clip {meta_path.name} for {scheduled_time} ({rec_slot['strategy']})")
+                        if dry_run:
+                            stats["clips_previewed"] += 1
+                            print(f"Dry-run preview for {meta_path.name}: would schedule at {scheduled_time}")
+                        else:
+                            stats["clips_published"] += 1
+                            print(f"Scheduled clip {meta_path.name} for {scheduled_time} ({rec_slot['strategy']})")
                     except Exception as exc:
                         err = f"Failed to schedule clip {meta_path.name}: {exc}"
                         print(err)
