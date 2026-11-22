@@ -67,11 +67,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            cloud_state
+            cloud_state/queue.sqlite3*
+            cloud_state/analytics_ledger.json
             recordings
           key: cloud-clipper-state-${{ github.run_id }}
           restore-keys: |
             cloud-clipper-state-
+
+      - name: Remove any legacy cached source allowlist
+        run: rm -f cloud_state/source_allowlist.json
 
       - name: Execute cloud batch
         env:
@@ -147,6 +151,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cloud-state-${{ github.run_number }}
-          path: cloud_state/
+          path: |
+            cloud_state/queue.sqlite3*
+            cloud_state/analytics_ledger.json
           if-no-files-found: ignore
           retention-days: 7
