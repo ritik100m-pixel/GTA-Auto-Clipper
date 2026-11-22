@@ -110,7 +110,7 @@ class CloudBatchRunnerTests(unittest.TestCase):
         )
         with patch("cloud_runner.run_recovery") as recover:
             stats = self.runner.run_batch(max_duration_seconds=30, target_clips=1)
-        self.assertEqual(stats["jobs_claimed"], 0)
+        self.assertEqual(stats["jobs_claimed"], 1)
         self.assertEqual(stats["jobs_skipped_unauthorized"], 1)
         recover.assert_not_called()
 
