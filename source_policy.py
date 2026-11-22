@@ -129,7 +129,9 @@ class SourcePolicy:
         # gameplay. Require an explicit one-time visual source review as well.
         if entry.get("gameplay_verified") is not True:
             return False
-        if status == "authorized" and not (entry.get("proof_reference") or entry.get("notes")):
+        proof_reference = str(entry.get("proof_reference") or "").strip()
+        notes = str(entry.get("notes") or "").strip()
+        if status == "authorized" and not (proof_reference or notes):
             return False
         scopes = entry.get("permission_scope", [])
         if required_scope and required_scope not in scopes:
