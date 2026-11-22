@@ -31,6 +31,11 @@ on:
         required: true
         default: false
         type: boolean
+      upload_output_artifact:
+        description: "Upload generated clips as a public artifact (any repository reader can download)"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -68,9 +73,7 @@ jobs:
         with:
           path: |
             cloud_state/queue.sqlite3*
-            cloud_state/analytics_ledger.json
             cloud_state/dedupe_ledger.json
-            recordings
           key: cloud-clipper-state-${{ github.run_id }}
           restore-keys: |
             cloud-clipper-state-
@@ -138,8 +141,8 @@ jobs:
 
           python cloud_runner.py "${args[@]}"
 
-      - name: Upload generated clips
-        if: always()
+      - name: Upload generated clips (public artifact; opt-in only)
+        if: always() && (inputs.upload_output_artifact == true || vars.GTA_UPLOAD_OUTPUT_ARTIFACTS == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: generated-clips-${{ github.run_number }}
@@ -147,13 +150,3 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-      - name: Upload cloud state snapshot
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cloud-state-${{ github.run_number }}
-          path: |
-            cloud_state/queue.sqlite3*
-            cloud_state/analytics_ledger.json
-          if-no-files-found: ignore
-          retention-days: 7
