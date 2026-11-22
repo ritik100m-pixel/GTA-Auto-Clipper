@@ -95,6 +95,7 @@ class UploadedVideoTests(unittest.TestCase):
         self.assertEqual(runner.queue.job["payload"]["source_type"], "youtube_video")
         self.assertEqual(runner.batch_args["target_clips"], 3)
         self.assertTrue(runner.batch_args["dry_run"])
+        self.assertFalse(runner.batch_args["discover_when_idle"])
         current = os.environ.get("GTA_SOURCE_ALLOWLIST_JSON")
         self.assertEqual(current, previous)
 
