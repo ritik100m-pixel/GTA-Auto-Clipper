@@ -115,28 +115,13 @@ class CloudBatchRunner:
         except Exception as exc:
             print(f"Regular-video discovery encountered error: {type(exc).__name__}: {exc}")
             videos = []
-        for video in videos:
-            source = self.policy.get_source(video["channel_id"]) or {}
-            job = self.queue.enqueue(
-                job_type="capture_and_clip",
-                job_key=f"youtube-video:{video['channel_id']}:{video['video_id']}",
-                payload={
-                    "url": video["url"],
-                    "video_id": video["video_id"],
-                    "title": video.get("title"),
-                    "channel_id": video["channel_id"],
-                    "channel": video.get("channel"),
-                    "credit": source.get("credit") or video.get("channel"),
-                    "gameplay_verified": True,
-                    "source_type": "youtube_video",
-                    "published_at": video.get("published_at"),
-                },
-                authorized=True,
-                max_attempts=3,
-            )
-            enqueued_jobs.append(job)
-
-        print(f"Regular-video discovery found {len(videos)} recent uploads from configured creators.")
+        # VODs are discovered for reporting, but this queue currently uses a
+        # live-stream recorder. Do not enqueue regular uploads until a dedicated
+        # finite-video download/process path exists.
+        print(
+            f"Regular-video discovery found {len(videos)} recent uploads from configured creators; "
+            "VOD capture is not enabled yet."
+        )
         return enqueued_jobs
 
     def run_batch(self, max_duration_seconds=21600, target_clips=10,
@@ -238,6 +223,14 @@ class CloudBatchRunner:
                 payload = job.get("payload", {})
                 url = payload.get("url")
                 channel_id = payload.get("channel_id")
+
+                # Queue state may survive deployments. Older runs could have
+                # queued VODs before VOD capture was implemented; retire them
+                # safely instead of sending them to the live recorder.
+                if payload.get("source_type") == "youtube_video":
+                    self.queue.complete(job_id, self.worker_id)
+                    print(f"Skipped legacy VOD job {job_id}: finite-video capture is not enabled.")
+                    continue
 
                 # Queue state is persistent and may outlive a creator permission
                 # change. Re-check authorization immediately before every capture.

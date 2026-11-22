@@ -49,7 +49,8 @@ def run(cmd, **kw):
 def stream_info(url):
     r = run(ytdlp_cmd("--dump-single-json", "--no-download", "--no-warnings", url))
     if r.returncode:
-        sys.exit("yt-dlp could not read that URL:\n" + r.stderr[-400:])
+        detail = r.stderr[-400:].strip() or "yt-dlp returned a non-zero exit code."
+        raise RuntimeError("yt-dlp could not read that URL:\n" + detail)
     return json.loads(r.stdout)
 
 
@@ -79,7 +80,8 @@ def start_recorder(url, file_, chunk, max_seconds, outdir):
         r = run(ytdlp_cmd("-g", "--no-warnings", "-f", "bv[height<=720]+ba/b[height<=720]/b", url))
         lines = [l for l in r.stdout.splitlines() if l.startswith("http")]
         if r.returncode or not lines:
-            sys.exit("could not get a stream URL:\n" + r.stderr[-400:])
+            detail = r.stderr[-400:].strip() or "yt-dlp returned no media URLs."
+            raise RuntimeError("could not get a stream URL:\n" + detail)
         inputs = [x for u in lines[:2] for x in ("-i", u)]  # video url (+ separate audio url)
     maps = ["-map", "0:v:0", "-map", "1:a:0"] if len(inputs) == 4 else ["-map", "0:v:0", "-map", "0:a:0?"]
     duration = ["-t", str(max_seconds)] if max_seconds > 0 else []

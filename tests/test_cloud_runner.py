@@ -46,28 +46,6 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertTrue(enqueued[0]["authorized"])
         self.assertEqual(enqueued[0]["payload"]["video_id"], "aaa111")
 
-    def test_discovery_enqueues_authorized_regular_videos(self):
-        self.runner.policy.add_source(
-            "UC-vod", "VideoCreator", permission_status="authorized",
-            permission_scope=["record", "clip"],
-            proof_reference="Written permission", gameplay_verified=True,
-        )
-        video = {
-            "video_id": "vod123", "channel_id": "UC-vod",
-            "channel": "VideoCreator", "title": "GTA full video",
-            "url": "https://www.youtube.com/watch?v=vod123",
-            "published_at": "2026-11-22T10:00:00+00:00",
-            "source_type": "youtube_video",
-        }
-        with patch("find_streams.find_streams", return_value=[]), \
-             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
-             patch("cloud_runner.find_channel_videos", return_value=[video]):
-            jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
-        self.assertEqual(len(jobs), 1)
-        self.assertEqual(jobs[0]["job_key"], "youtube-video:UC-vod:vod123")
-        self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_video")
-        self.assertTrue(jobs[0]["authorized"])
-
     def test_discovery_enqueues_configured_creator_livestream(self):
         self.runner.policy.add_source(
             "UC-live", "LiveCreator", permission_status="authorized",
@@ -86,6 +64,47 @@ class CloudBatchRunnerTests(unittest.TestCase):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["job_key"], "youtube-live:UC-live:https://www.youtube.com/watch?v=live123")
         self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_live")
+
+    def test_discovery_reports_vods_without_enqueuing_them(self):
+        self.runner.policy.add_source(
+            "UC-vod-only", "VideoCreator", permission_status="authorized",
+            permission_scope=["record", "clip"], proof_reference="Written permission",
+            gameplay_verified=True,
+        )
+        video = {
+            "video_id": "vod456", "channel_id": "UC-vod-only",
+            "channel": "VideoCreator", "title": "GTA full video",
+            "url": "https://www.youtube.com/watch?v=vod456",
+            "published_at": "2026-11-22T10:00:00+00:00",
+        }
+        with patch("find_streams.find_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_videos", return_value=[video]):
+            jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
+        self.assertEqual(jobs, [])
+        self.assertEqual(self.runner.queue.claim_next("test-worker"), None)
+
+    def test_legacy_vod_queue_job_is_skipped_without_live_recorder(self):
+        self.runner.policy.add_source(
+            "UC-vod-legacy", "VideoCreator", permission_status="authorized",
+            permission_scope=["record", "clip"], proof_reference="Written permission",
+            gameplay_verified=True,
+        )
+        self.runner.queue.enqueue(
+            "capture_and_clip", "legacy-vod-job",
+            {
+                "url": "https://www.youtube.com/watch?v=vod789",
+                "video_id": "vod789", "channel_id": "UC-vod-legacy",
+                "channel": "VideoCreator", "gameplay_verified": True,
+                "source_type": "youtube_video",
+            },
+            authorized=True,
+        )
+        with patch("cloud_runner.run_recovery") as recover:
+            stats = self.runner.run_batch(max_duration_seconds=30, target_clips=1)
+        self.assertEqual(stats["jobs_claimed"], 1)
+        recover.assert_not_called()
+
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
         self.runner.policy.add_source(
             "UC-auth-1", "AuthChannel", permission_status="authorized",
