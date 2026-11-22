@@ -4,6 +4,7 @@ Classifies gameplay clips into distinct GTA content categories (police chases,
 stunts, funny moments, fails, close escapes, etc.) and guards against
 duplicate or overlapping clips across chunks and recording sessions.
 """
+import hashlib
 import json
 import os
 import re
@@ -131,7 +132,12 @@ class ClipDeduplicator:
         self.load()
 
     def _token_set(self, text):
-        return set(_clean_tokens(text))
+        # Keep only one-way token hashes in the cross-run ledger. The public
+        # repository cache must not contain raw creator transcripts.
+        return {
+            hashlib.sha256(token.encode("utf-8")).hexdigest()
+            for token in _clean_tokens(text)
+        }
 
     def _jaccard(self, set_a, set_b):
         if not set_a and not set_b:
