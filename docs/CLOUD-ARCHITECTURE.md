@@ -123,7 +123,8 @@ With no authorized source configured, a successful first run is expected to repo
 ## Runtime, persistence, and storage
 
 - Standard GitHub-hosted Ubuntu runners are free for public repositories. Each job is limited to 6 hours; this workflow stops earlier.
-- The workflow uses GitHub Actions cache for queue/session state and recording recovery. Cache is best-effort storage and can be evicted; it is not a permanent database.
+- The workflow uses GitHub Actions cache for the queue database, scheduling ledger, deduplication ledger, and recording recovery. The private source allowlist is excluded from cache and artifacts. Cache is best-effort storage and can be evicted; it is not a permanent database.
+- The scheduler currently uses default IST audience-hour priors and spreads clips apart within each batch. Importing actual YouTube Analytics performance data is a later enhancement, so it does not yet learn from channel metrics automatically.
 - Completed raw transport-stream chunks are deleted after their MP4 and metadata outputs are successfully saved. Incomplete chunks are retained for recovery.
 - Generated clips are uploaded as a GitHub Actions artifact for 1 day. The state snapshot is retained for 7 days. GitHub Free has a 500 MB artifact-storage allowance and a 10 GB cache limit, so output volume and retention must stay bounded.
 - The workflow runs twice daily, not continuously. It can miss a livestream that starts and ends between scheduled runs. The 10-clip target is a goal, not a guarantee; source availability, clip quality, processing speed, API quotas, and platform limits can reduce the daily count.
