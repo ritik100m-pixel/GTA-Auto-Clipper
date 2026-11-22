@@ -104,7 +104,6 @@ class YouTubePublisher:
             "description": description,
             "tags": tags[:15],
             "categoryId": "20",  # Gaming
-            "defaultLanguage": "en",
         }
 
         status = {
