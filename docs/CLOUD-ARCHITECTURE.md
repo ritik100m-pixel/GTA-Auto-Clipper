@@ -52,7 +52,7 @@ Every source entry must have:
 - `gameplay_verified: true`, meaning you have manually reviewed the channel/source and confirmed it is suitable for GTA gameplay clipping
 - A proof reference or note describing the permission basis
 
-A channel-level gameplay review is a standing source check, not a computer-vision guarantee that every future livestream is gameplay. Do not enable mixed-content channels unless you can reliably verify their streams. Remove or revoke a source if its permission changes. Creator credit alone is not permission.
+A channel-level gameplay review is not a guarantee that every later upload contains GTA gameplay. Regular YouTube uploads are discovered as candidates, but the cloud runner processes only individual IDs listed in `approved_video_ids` after you have reviewed that exact video and confirmed it is suitable. Each listed video must also be covered by the creator's permission. Remove IDs when permission changes. Creator credit alone is not permission.
 
 The allowlist is supplied through the private GitHub Actions secret `GTA_SOURCE_ALLOWLIST_JSON`; it is not committed to the public repository, cached, or uploaded as an artifact. The workflow also removes any legacy cached allowlist before starting. Example structure:
 
@@ -66,7 +66,8 @@ The allowlist is supplied through the private GitHub Actions secret `GTA_SOURCE_
       "permission_status": "authorized",
       "permission_scope": ["record", "clip", "publish"],
       "gameplay_verified": true,
-      "proof_reference": "Link or note documenting permission",
+      "approved_video_ids": ["VIDEO_ID_REVIEWED_BY_YOU"],
+      "proof_reference": "Actual private permission record or reference",
       "credit": "Creator name"
     }
   }
