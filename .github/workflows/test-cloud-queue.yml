@@ -66,6 +66,9 @@ jobs:
       - name: Run creator video discovery tests
         run: python -m unittest tests.test_find_channel_videos -v
 
+      - name: Run finite video processor tests
+        run: python -m unittest tests.test_vod_processor -v
+
       - name: Run performance tracker tests
         run: python -m unittest tests.test_performance_tracker -v
 
