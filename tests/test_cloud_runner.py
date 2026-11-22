@@ -114,6 +114,34 @@ class CloudBatchRunnerTests(unittest.TestCase):
         saved = json.loads(dummy_json.read_text(encoding="utf-8"))
         self.assertFalse(saved.get("dry_run_published"))
 
+    def test_real_publishing_fails_closed_without_youtube_oauth(self):
+        self.runner.policy.add_source(
+            "UC-publish", "PublishCreator", permission_status="authorized",
+            permission_scope=["record", "clip", "publish"],
+            proof_reference="Permission email", gameplay_verified=True,
+        )
+        dummy_mp4 = self.output_dir / "clip_003.mp4"
+        dummy_json = self.output_dir / "clip_003.json"
+        dummy_mp4.write_bytes(b"dummy-mp4")
+        dummy_json.write_text(json.dumps({
+            "title": "GTA police chase",
+            "approved": True,
+            "source_channel_id": "UC-publish",
+        }), encoding="utf-8")
+        self.runner.queue.enqueue(
+            "capture_and_clip", "publish-job",
+            {"url": "https://example.com/live", "channel_id": "UC-publish",
+             "channel": "PublishCreator", "gameplay_verified": True},
+            authorized=True,
+        )
+        with patch("cloud_runner.run_recovery", return_value=([(str(dummy_mp4), str(dummy_json))], 0)):
+            stats = self.runner.run_batch(
+                max_duration_seconds=30, target_clips=1,
+                dry_run=False, enable_publishing=True,
+            )
+        self.assertEqual(stats["clips_published"], 0)
+        self.assertTrue(any("OAuth is not fully configured" in err for err in stats["errors"]))
+
     def test_stale_queued_job_is_skipped_after_source_permission_is_missing(self):
         self.runner.queue.enqueue(
             "capture_and_clip", "stale-stream-job",
