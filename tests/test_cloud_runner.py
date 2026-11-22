@@ -231,8 +231,8 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "url": "https://www.youtube.com/watch?v=vod-approved",
             "published_at": "2026-11-22T10:00:00+00:00",
         }
-        with patch("find_streams.find_streams", return_value=[]), \\
-             patch("cloud_runner.find_channel_live_streams", return_value=[]), \\
+        with patch("find_streams.find_streams", return_value=[]), \
+             patch("cloud_runner.find_channel_live_streams", return_value=[]), \
              patch("cloud_runner.find_channel_videos", return_value=[video]):
             jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
         self.assertEqual(len(jobs), 1)
@@ -278,8 +278,8 @@ class CloudBatchRunnerTests(unittest.TestCase):
         clip_path.write_bytes(b"clip")
         metadata_path.write_text(json.dumps({"test": False}), encoding="utf-8")
 
-        with patch("cloud_runner.download_youtube_video", side_effect=fake_download) as download, \\
-             patch("cloud_runner.split_video", side_effect=fake_split) as split, \\
+        with patch("cloud_runner.download_youtube_video", side_effect=fake_download) as download, \
+             patch("cloud_runner.split_video", side_effect=fake_split) as split, \
              patch("cloud_runner.process_chunk", return_value=([(str(clip_path), str(metadata_path))], 1)) as process:
             stats = self.runner.run_batch(max_duration_seconds=30, target_clips=1)
 
