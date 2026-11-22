@@ -58,13 +58,14 @@ class CloudBatchRunnerTests(unittest.TestCase):
             "published_at": "2026-11-22T10:00:00+00:00",
             "source_type": "youtube_video",
         }
-        with patch("find_streams.find_streams", return_value=[]), \\
+        with patch("find_streams.find_streams", return_value=[]), \
              patch("cloud_runner.find_channel_videos", return_value=[video]):
             jobs = self.runner.run_discovery_and_enqueue(api_key="dummy-key")
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["job_key"], "youtube-video:UC-vod:vod123")
         self.assertEqual(jobs[0]["payload"]["source_type"], "youtube_video")
         self.assertTrue(jobs[0]["authorized"])
+
     def test_run_batch_processes_queued_job_and_schedules_clips(self):
         self.runner.policy.add_source(
             "UC-auth-1", "AuthChannel", permission_status="authorized",
