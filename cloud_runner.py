@@ -217,7 +217,7 @@ class CloudBatchRunner:
                         deduplicator=self.deduplicator,
                     )
                     generated_outputs.extend(rec_outputs)
-                    stats["clips_generated"] += rec_count
+                    stats["clips_generated"] += len(rec_outputs)
 
                     # If time remains, capture more chunks (e.g. up to remaining time)
                     remaining = max(0, work_deadline - time.time())
