@@ -1,7 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import numpy as np
 
@@ -20,6 +20,18 @@ from recording_session import RecordingSession
 
 
 class ClipperReleaseTests(unittest.TestCase):
+    def test_run_recovery_returns_number_of_clips_not_chunks(self):
+        session = MagicMock()
+        session.claim_next.side_effect = [{"id": "chunk-1"}, None]
+        outputs = [("clip-a.mp4", "clip-a.json"), ("clip-b.mp4", "clip-b.json")]
+        with patch("clip.process_chunk", return_value=(outputs, 2)):
+            recovered, count = run_recovery(
+                session, "worker", "output", {"name": "creator"},
+                "GTA live", "https://youtube.com/watch?v=abc",
+            )
+        self.assertEqual(recovered, outputs)
+        self.assertEqual(count, 2)
+
     def test_recording_session_id_is_stable_for_same_stream(self):
         first = recording_session_id("youtube-video-123")
         second = recording_session_id("youtube-video-123")
