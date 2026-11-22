@@ -6,6 +6,7 @@ on:
       - cloud-batch-audit
       - automation/cloud-runner-mvp-v2
       - feat/creator-vod-and-posting-analytics
+      - feature/daily-gameplay-upload
   pull_request:
     branches:
       - main
