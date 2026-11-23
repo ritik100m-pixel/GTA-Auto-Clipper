@@ -26,7 +26,21 @@ def ytdlp_cmd(*args):
 def _run_checked(command, runner, description):
     result = runner(command, capture_output=True, text=True)
     if result.returncode:
-        detail = (result.stderr or result.stdout or "No diagnostic output returned.")[-800:].strip()
+        first_detail = (result.stderr or result.stdout or "No diagnostic output returned.").strip()
+        # GitHub-hosted runner IPs can trigger YouTube's anonymous web-client
+        # bot challenge. Retry once with YouTube's Safari web player client.
+        # This uses no account cookies, browser profile, proxy, or paid service.
+        if "sign in to confirm" in first_detail.lower() or "not a bot" in first_detail.lower():
+            fallback = command[:3] + [
+                "--extractor-args", "youtube:player_client=web_safari"
+            ] + command[3:]
+            retry = runner(fallback, capture_output=True, text=True)
+            if retry.returncode == 0:
+                return retry
+            retry_detail = (retry.stderr or retry.stdout or "No diagnostic output returned.").strip()
+            detail = f"Default YouTube client: {first_detail[-450:]}\\nSafari-client retry: {retry_detail[-450:]}"
+        else:
+            detail = first_detail[-800:]
         raise RuntimeError(f"{description}: {detail}")
     return result
 

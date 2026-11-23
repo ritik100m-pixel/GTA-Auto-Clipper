@@ -60,7 +60,7 @@ This repository is public. GitHub-hosted standard runners for public repositorie
 ## Troubleshooting
 
 - **Owner channel mismatch:** the source video must be uploaded by the YouTube channel whose ID is stored in `GTA_OWNER_CHANNEL_ID`.
-- **yt-dlp cannot download:** check that the video is Unlisted (not Private), processing has finished on YouTube, and the URL is correct. The workflow does not use browser cookies or bypass access controls.
+- **yt-dlp cannot download:** check that the video is Unlisted (not Private), processing has finished on YouTube, and the URL is correct. The downloader retries YouTube's sign-in/bot challenge once with the `web_safari` player client. It does not use browser cookies, account sessions, proxies, or bypass access controls. If YouTube still blocks the GitHub-hosted runner, use the supported alternative source-file handoff rather than exporting your primary account cookies.
 - **OAuth not configured:** dry-run can still validate processing, but real scheduling requires the three YouTube OAuth secrets.
 - **No clips found:** the video may not contain sufficiently strong moments under the current scoring threshold. Try a different gameplay recording or reduce the target; the system will not invent highlights.
 - **Publishing error:** check YouTube Studio before retrying. The publisher records returned YouTube video IDs to prevent duplicate uploads.

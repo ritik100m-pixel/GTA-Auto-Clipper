@@ -47,10 +47,23 @@ def run(cmd, **kw):
 
 # ---------- source info + permission gate ----------
 def stream_info(url):
-    r = run(ytdlp_cmd("--dump-single-json", "--no-download", "--no-warnings", url))
+    args = ("--dump-single-json", "--no-download", "--no-warnings", url)
+    r = run(ytdlp_cmd(*args))
     if r.returncode:
-        detail = r.stderr[-400:].strip() or "yt-dlp returned a non-zero exit code."
-        raise RuntimeError("yt-dlp could not read that URL:\n" + detail)
+        detail = (r.stderr or r.stdout or "yt-dlp returned a non-zero exit code.").strip()
+        # GitHub-hosted runner IPs can trigger YouTube's anonymous web-client
+        # bot challenge. Retry once using the Safari web player client without
+        # exporting or storing any Google account cookies.
+        if "sign in to confirm" in detail.lower() or "not a bot" in detail.lower():
+            r = run(ytdlp_cmd("--extractor-args", "youtube:player_client=web_safari", *args))
+            if r.returncode:
+                retry_detail = (r.stderr or r.stdout or "No diagnostic output returned.").strip()
+                raise RuntimeError(
+                    "yt-dlp could not read that URL after the Safari-client retry:\n"
+                    + retry_detail[-800:]
+                )
+        else:
+            raise RuntimeError("yt-dlp could not read that URL:\n" + detail[-800:])
     return json.loads(r.stdout)
 
 

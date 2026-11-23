@@ -68,6 +68,32 @@ class VodProcessorTests(unittest.TestCase):
         self.assertNotIn("--cookies", joined)
         self.assertNotIn("--cookies-from-browser", joined)
 
+
+    def test_retries_youtube_bot_challenge_with_safari_client(self):
+        info = self.metadata()
+        commands = []
+
+        def runner(command, **kwargs):
+            commands.append(command)
+            if "--dump-single-json" in command:
+                if "--extractor-args" in command:
+                    return subprocess.CompletedProcess(command, 0, json.dumps(info), "")
+                return subprocess.CompletedProcess(
+                    command, 1, "", "Sign in to confirm you're not a bot"
+                )
+            output_template = command[command.index("--output") + 1]
+            Path(output_template.replace("%(ext)s", "mp4")).write_bytes(b"video")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        result, _ = download_youtube_video(
+            "https://youtu.be/video123", self.root / "download",
+            expected_video_id="video123", expected_channel_id="UC-authorized",
+            runner=runner,
+        )
+        self.assertEqual(result["id"], "video123")
+        self.assertEqual(len(commands), 3)
+        self.assertIn("youtube:player_client=web_safari", commands[1])
+
     def test_rejects_livestream(self):
         info = self.metadata(is_live=True)
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(info), ""))
