@@ -27,10 +27,10 @@ Add repository Actions variable `SHORTS_MANAGER_ENABLED` with value `true` only 
 - Uploads at most one Short per run.
 - Creates a clean title from the filename and appends `#Shorts`.
 - Schedules for the next India posting slot, 11:30 or 19:30.
-- Verifies the YouTube video ID and destination channel before deleting the
-  Drive original.
+- Verifies the YouTube video ID, destination channel, private status, and actual scheduled time before deleting the Drive original.
 - Stores a file-ID/video-ID ledger to prevent duplicate uploads.
-- A failed download, upload, or verification leaves the original in Drive.
+- A failed download or definite upload failure leaves the original in Drive. A timeout or interrupted upload after the upload-start marker is treated as uncertain and held for manual review rather than blindly retried, to avoid duplicate publication.
+- Drive appProperties record upload-start and verified YouTube video IDs, so cleanup markers survive GitHub Actions cache eviction. The workflow still uses the Actions cache as a secondary local ledger.
 - Maximum file size is 5 GiB. Supported extensions: MP4, MOV, M4V, WebM, MKV.
 
 ## Important limitations and safeguards
@@ -40,13 +40,15 @@ The OAuth Drive scope is broad enough to list and delete files, so do not point 
 at a folder containing personal or unrelated files.
 
 This workflow does not edit or transcode videos. Upload finished vertical Shorts.
-The filename-based title cleanup is deterministic, not AI-generated. A free
+Titles are deterministically cleaned from filenames, not AI-generated. The uploader detects the media MIME type from the filename and verifies YouTube's returned scheduled timestamp independent of timezone formatting. A free
 GitHub runner cannot call ChatGPT as an operator in the background. The workflow
 does not spend money or use paid AI services.
 
-The workflow uses GitHub Actions cache for its duplicate ledger. Cache is
-best-effort, not permanent storage, so this first version is not a guarantee
-against duplicates after cache eviction or loss. Keep an eye on YouTube Studio
+The GitHub Actions cache is best-effort, not permanent storage. Drive-side appProperties are used as the durable per-file marker while the original file remains in the Incoming folder. If an upload result is uncertain, the workflow intentionally stops for manual reconciliation rather than retrying automatically. Keep an eye on YouTube Studio
 and do not manually re-upload an item whose result is uncertain. Before enabling unattended publishing for
 the first time, test with one non-critical video and verify the scheduled item
 in YouTube Studio. YouTube API quota and channel restrictions still apply.
+
+## Validation
+
+Pull requests run Python compilation and unit tests for title cleanup, schedule spacing, state corruption handling, empty queues, and uncertain-upload duplicate protection. A real Drive/YouTube end-to-end test is still required before enabling unattended runs.
