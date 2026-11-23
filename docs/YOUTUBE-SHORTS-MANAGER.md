@@ -16,6 +16,12 @@ The old refresh token may only have YouTube upload scope. It must be re-authoriz
 with Drive scope before this manager can list and delete Drive files. Never put
 credentials in the repository or chat.
 
+**OAuth lifetime warning:** if the Google OAuth consent screen is configured as
+External and its publishing status is Testing, refresh tokens for these non-basic
+scopes expire after 7 days. For a cloud service that should run continuously, do
+not assume a Testing refresh token is permanent. Google documents this behavior
+in its [OAuth 2.0 refresh-token guidance](https://developers.google.com/identity/protocols/oauth2#expiration). For a personal-only app, review Google's personal-use exception and app publishing requirements before changing the status; do not publish or request verification blindly.
+
 ## Enable only after setup
 
 Add repository Actions variable `SHORTS_MANAGER_ENABLED` with value `true` only after the OAuth refresh token has both scopes, the folder ID is configured, and a supervised test upload succeeds. Until then the scheduled workflow job is skipped.
