@@ -7,6 +7,9 @@ import argparse
 import json
 import os
 import sys
+import hashlib
+import subprocess
+from pathlib import Path
 
 from clip import stream_info
 from cloud_runner import CloudBatchRunner
@@ -17,10 +20,46 @@ MAX_TARGET_CLIPS = 20
 MAX_BATCH_SECONDS = 330 * 60
 
 
+def _inspect_local_video(path, owner_channel_id, title=None):
+    source = Path(path).resolve()
+    if not source.is_file() or source.stat().st_size == 0:
+        raise ValueError("Uploaded source file is missing or empty.")
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-show_entries", "stream=codec_type", "-of", "json", str(source)],
+        capture_output=True, text=True,
+    )
+    if probe.returncode:
+        raise ValueError("Uploaded file is not a readable video. Use MP4, MOV, or MKV.")
+    data = json.loads(probe.stdout)
+    duration = float(data.get("format", {}).get("duration") or 0)
+    if duration <= 0 or not any(x.get("codec_type") == "video" for x in data.get("streams", [])):
+        raise ValueError("Uploaded file has no valid video stream or duration.")
+    if duration > MAX_VIDEO_SECONDS:
+        raise ValueError("Uploaded video exceeds the 90-minute limit.")
+    digest = hashlib.sha256()
+    with source.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "id": "file-" + digest.hexdigest()[:20],
+        "channel_id": owner_channel_id,
+        "channel": "Owner channel",
+        "uploader": "Owner channel",
+        "title": title or source.stem,
+        "duration": duration,
+        "is_live": False,
+        "live_status": "not_live",
+        "local_path": str(source),
+    }
+
+
 def process_uploaded_video(
     url,
     owner_channel_id,
     *,
+    local_file=None,
+    title=None,
     confirm_rights=False,
     target_clips=10,
     dry_run=True,
@@ -48,8 +87,14 @@ def process_uploaded_video(
     if unattended and os.environ.get("GTA_UNATTENDED_POSTS") != "1":
         raise PermissionError("Unattended publishing requires GTA_UNATTENDED_POSTS=1.")
 
-    _validate_youtube_url(url)
-    info = info_reader(url)
+    if local_file:
+        info = _inspect_local_video(local_file, owner_channel_id, title=title)
+        url = None
+    else:
+        if not url:
+            raise ValueError("Provide either a YouTube URL or a GitHub Release video file.")
+        _validate_youtube_url(url)
+        info = info_reader(url)
     video_id = str(info.get("id") or "").strip()
     channel_id = str(info.get("channel_id") or "").strip()
     duration = info.get("duration")
@@ -110,7 +155,8 @@ def process_uploaded_video(
                 "channel": info.get("channel") or info.get("uploader") or "Owner",
                 "credit": info.get("uploader") or info.get("channel") or "Owner",
                 "gameplay_verified": True,
-                "source_type": "youtube_video",
+                "source_type": "local_video" if local_file else "youtube_video",
+                "local_path": info.get("local_path"),
                 "rights_confirmed_by_user": True,
             },
             authorized=True,
@@ -145,7 +191,9 @@ def process_uploaded_video(
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", required=True, help="One unlisted YouTube video URL from your owner channel")
+    parser.add_argument("--url", help="One unlisted YouTube video URL from your owner channel")
+    parser.add_argument("--file", dest="local_file", help="Local video file downloaded from a GitHub Release asset")
+    parser.add_argument("--title", help="Optional title for an uploaded video file")
     parser.add_argument("--owner-channel-id", required=True, help="Expected YouTube channel ID (UC...)")
     parser.add_argument("--confirm-rights", action="store_true", help="Confirm ownership or explicit editing/publishing rights")
     parser.add_argument("--target-clips", type=int, default=10)
@@ -155,9 +203,13 @@ def main():
     args = parser.parse_args()
 
     try:
+        if bool(args.url) == bool(args.local_file):
+            raise ValueError("Provide exactly one of --url or --file.")
         process_uploaded_video(
             args.url,
             args.owner_channel_id,
+            local_file=args.local_file,
+            title=args.title,
             confirm_rights=args.confirm_rights,
             target_clips=args.target_clips,
             dry_run=args.dry_run,
