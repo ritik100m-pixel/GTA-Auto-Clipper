@@ -9,8 +9,13 @@ on:
         default: "github_release"
         type: choice
         options:
+          - google_drive
           - github_release
           - youtube_url
+      drive_url:
+        description: "Google Drive sharing link (Anyone with the link can view)"
+        required: false
+        type: string
       video_url:
         description: "Optional unlisted YouTube URL (youtube_url mode only)"
         required: false
@@ -112,6 +117,22 @@ jobs:
           gh release download "$INPUT_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$INPUT_ASSET_NAME" --dir incoming
           test -s "incoming/$INPUT_ASSET_NAME" || { echo "Release asset not found. Check the tag and exact filename."; exit 2; }
 
+      - name: Download gameplay file from Google Drive
+        if: inputs.source_mode == 'google_drive'
+        env:
+          INPUT_DRIVE_URL: ${{ inputs.drive_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$INPUT_DRIVE_URL" ]] || { echo "A Google Drive sharing link is required."; exit 2; }
+          echo "::add-mask::$INPUT_DRIVE_URL"
+          mkdir -p incoming
+          gdown --fuzzy "$INPUT_DRIVE_URL" --no-cookies -O incoming/gameplay.mp4
+          test -s incoming/gameplay.mp4 || { echo "Google Drive download failed. Check link access and try again."; exit 2; }
+          size=$(stat -c%s incoming/gameplay.mp4)
+          max_size=$((5 * 1024 * 1024 * 1024))
+          (( size <= max_size )) || { echo "The source video exceeds the 5 GiB workflow limit."; exit 2; }
+
       - name: Process the submitted gameplay video
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -122,6 +143,7 @@ jobs:
           GTA_UNATTENDED_POSTS: ${{ secrets.GTA_UNATTENDED_POSTS }}
           INPUT_SOURCE_MODE: ${{ inputs.source_mode }}
           INPUT_VIDEO_URL: ${{ inputs.video_url }}
+          INPUT_DRIVE_URL: ${{ inputs.drive_url }}
           INPUT_ASSET_NAME: ${{ inputs.asset_name }}
           INPUT_CONFIRM_RIGHTS: ${{ inputs.confirm_rights }}
           INPUT_TARGET_CLIPS: ${{ inputs.target_clips }}
@@ -134,6 +156,8 @@ jobs:
           if [[ "$INPUT_SOURCE_MODE" == "youtube_url" ]]; then
             [[ -n "$INPUT_VIDEO_URL" ]] || { echo "A video URL is required."; exit 2; }
             echo "::add-mask::$INPUT_VIDEO_URL"
+          elif [[ "$INPUT_SOURCE_MODE" == "google_drive" ]]; then
+            [[ -s "incoming/gameplay.mp4" ]] || { echo "The Google Drive video is missing."; exit 2; }
           elif [[ "$INPUT_SOURCE_MODE" == "github_release" ]]; then
             [[ -s "incoming/$INPUT_ASSET_NAME" ]] || { echo "The GitHub Release asset is missing."; exit 2; }
           else
@@ -162,6 +186,8 @@ jobs:
                 --target-clips "$INPUT_TARGET_CLIPS")
           if [[ "$INPUT_SOURCE_MODE" == "youtube_url" ]]; then
             args+=(--url "$INPUT_VIDEO_URL")
+          elif [[ "$INPUT_SOURCE_MODE" == "google_drive" ]]; then
+            args+=(--file "incoming/gameplay.mp4")
           else
             args+=(--file "incoming/$INPUT_ASSET_NAME")
           fi
