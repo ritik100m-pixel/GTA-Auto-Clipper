@@ -26,11 +26,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Compile manager
-        run: python -m py_compile shorts_manager.py
+      - name: Install test dependency
+        run: python -m pip install requests
+      - name: Compile manager and tests
+        run: python -m py_compile shorts_manager.py tests/test_shorts_manager.py
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p 'test_shorts_manager.py' -v
 
   manage-drive-queue:
-    if: ${{ vars.SHORTS_MANAGER_ENABLED == 'true' }}
+    if: github.event_name != 'pull_request' && vars.SHORTS_MANAGER_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
