@@ -3,9 +3,27 @@ name: Daily Gameplay Video to Shorts
 on:
   workflow_dispatch:
     inputs:
-      video_url:
-        description: "Unlisted YouTube video URL from your configured owner channel"
+      source_mode:
+        description: "Choose how to provide the source video"
         required: true
+        default: "github_release"
+        type: choice
+        options:
+          - github_release
+          - youtube_url
+      video_url:
+        description: "Optional unlisted YouTube URL (youtube_url mode only)"
+        required: false
+        type: string
+      release_tag:
+        description: "GitHub Release tag containing the uploaded video"
+        required: false
+        default: "gameplay-upload"
+        type: string
+      asset_name:
+        description: "Exact uploaded video filename in the Release"
+        required: false
+        default: "gameplay.mp4"
         type: string
       confirm_rights:
         description: "I own this gameplay video or have explicit rights to edit and publish it"
@@ -79,6 +97,21 @@ jobs:
           restore-keys: |
             gta-scheduler-history-
 
+      - name: Download gameplay file from GitHub Release
+        if: inputs.source_mode == 'github_release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_ASSET_NAME: ${{ inputs.asset_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$INPUT_RELEASE_TAG" ]] || { echo "A GitHub Release tag is required."; exit 2; }
+          [[ -n "$INPUT_ASSET_NAME" ]] || { echo "A Release asset filename is required."; exit 2; }
+          mkdir -p incoming
+          gh release download "$INPUT_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$INPUT_ASSET_NAME" --dir incoming
+          test -s "incoming/$INPUT_ASSET_NAME" || { echo "Release asset not found. Check the tag and exact filename."; exit 2; }
+
       - name: Process the submitted gameplay video
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
@@ -87,7 +120,9 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           GTA_OWNER_CHANNEL_ID: ${{ secrets.GTA_OWNER_CHANNEL_ID }}
           GTA_UNATTENDED_POSTS: ${{ secrets.GTA_UNATTENDED_POSTS }}
+          INPUT_SOURCE_MODE: ${{ inputs.source_mode }}
           INPUT_VIDEO_URL: ${{ inputs.video_url }}
+          INPUT_ASSET_NAME: ${{ inputs.asset_name }}
           INPUT_CONFIRM_RIGHTS: ${{ inputs.confirm_rights }}
           INPUT_TARGET_CLIPS: ${{ inputs.target_clips }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
@@ -96,10 +131,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # This repository is public; never expose an Unlisted source URL in workflow logs.
-          echo "::add-mask::$INPUT_VIDEO_URL"
-
-          [[ -n "$INPUT_VIDEO_URL" ]] || { echo "A video URL is required."; exit 2; }
+          if [[ "$INPUT_SOURCE_MODE" == "youtube_url" ]]; then
+            [[ -n "$INPUT_VIDEO_URL" ]] || { echo "A video URL is required."; exit 2; }
+            echo "::add-mask::$INPUT_VIDEO_URL"
+          elif [[ "$INPUT_SOURCE_MODE" == "github_release" ]]; then
+            [[ -s "incoming/$INPUT_ASSET_NAME" ]] || { echo "The GitHub Release asset is missing."; exit 2; }
+          else
+            echo "Unknown source mode."
+            exit 2
+          fi
           [[ "$INPUT_CONFIRM_RIGHTS" == "true" ]] || {
             echo "Confirm ownership or explicit editing/publishing rights before processing."
             exit 2
@@ -117,10 +157,14 @@ jobs:
           [[ "$INPUT_ENABLE_PUBLISHING" == "true" || "$INPUT_ENABLE_PUBLISHING" == "false" ]] || exit 2
           [[ "$INPUT_UNATTENDED" == "true" || "$INPUT_UNATTENDED" == "false" ]] || exit 2
 
-          args=(--url "$INPUT_VIDEO_URL"
-                --owner-channel-id "$GTA_OWNER_CHANNEL_ID"
+          args=(--owner-channel-id "$GTA_OWNER_CHANNEL_ID"
                 --confirm-rights
                 --target-clips "$INPUT_TARGET_CLIPS")
+          if [[ "$INPUT_SOURCE_MODE" == "youtube_url" ]]; then
+            args+=(--url "$INPUT_VIDEO_URL")
+          else
+            args+=(--file "incoming/$INPUT_ASSET_NAME")
+          fi
 
           if [ "$INPUT_DRY_RUN" = "true" ]; then
             args+=(--dry-run)
@@ -137,7 +181,7 @@ jobs:
       - name: Delete all temporary video, clip, queue, and raw processing data
         if: always()
         run: |
-          rm -rf output recordings work test_out
+          rm -rf output recordings work test_out incoming
           mkdir -p cloud_state
           find cloud_state -maxdepth 1 -type f \
             ! -name "analytics_ledger.json" \
