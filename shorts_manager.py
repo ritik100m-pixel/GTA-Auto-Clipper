@@ -56,7 +56,9 @@ def next_slot():
 def read_state():
     STATE.parent.mkdir(parents=True, exist_ok=True)
     if not STATE.exists():
-        return {"version": 1, "processed": {}}
+        initial = {"version": 1, "processed": {}}
+        save_state(initial)
+        return initial
     state = json.loads(STATE.read_text())
     if state.get("version") != 1 or not isinstance(state.get("processed"), dict):
         raise RuntimeError("Invalid deduplication ledger; refusing to upload.")
@@ -154,6 +156,18 @@ def run():
     folder, channel = need("GDRIVE_INCOMING_FOLDER_ID"), need("GTA_OWNER_CHANNEL_ID")
     headers = auth()
     state = read_state()
+    # Retry cleanup for uploads already verified on YouTube.
+    for old_file_id, record in list(state["processed"].items()):
+        if record.get("cleanup_pending"):
+            try:
+                delete_drive_file(headers, old_file_id)
+            except requests.HTTPError as error:
+                if error.response is None or error.response.status_code != 404:
+                    raise
+            record["cleanup_pending"] = False
+            record["deleted_at"] = datetime.now(IST).isoformat()
+            save_state(state)
+
     all_files = drive_files(headers, folder)
     todo = [f for f in all_files
             if Path(f.get("name", "")).suffix.lower() in EXT
