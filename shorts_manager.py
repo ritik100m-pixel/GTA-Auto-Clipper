@@ -29,7 +29,14 @@ def auth():
         "refresh_token": need("YOUTUBE_REFRESH_TOKEN"),
         "grant_type": "refresh_token",
     }, timeout=30)
-    r.raise_for_status()
+    if not r.ok:
+        try:
+            error_body = r.json()
+        except ValueError:
+            error_body = {}
+        if error_body.get("error") == "invalid_grant":
+            raise RuntimeError("Google OAuth refresh token is invalid or expired. Re-authorize the same OAuth client with the required Drive and YouTube scopes; External apps left in Testing expire refresh tokens after 7 days.")
+        raise RuntimeError(f"Google OAuth token refresh failed: HTTP {r.status_code} {error_body.get('error', 'unknown_error')}")
     return {"Authorization": "Bearer " + r.json()["access_token"]}
 
 
