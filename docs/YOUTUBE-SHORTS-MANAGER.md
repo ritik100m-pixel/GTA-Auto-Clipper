@@ -20,7 +20,7 @@ credentials in the repository or chat.
 External and its publishing status is Testing, refresh tokens for these non-basic
 scopes expire after 7 days. For a cloud service that should run continuously, do
 not assume a Testing refresh token is permanent. Google documents this behavior
-in its [OAuth 2.0 refresh-token guidance](https://developers.google.com/identity/protocols/oauth2#expiration). For a personal-only app, review Google's personal-use exception and app publishing requirements before changing the status; do not publish or request verification blindly.
+in its [OAuth 2.0 refresh-token guidance](https://developers.google.com/identity/protocols/oauth2). For a personal-only app, review Google's personal-use exception and app publishing requirements before changing the status; do not publish or request verification blindly.
 
 ## Enable only after setup
 
