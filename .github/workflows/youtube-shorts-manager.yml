@@ -30,6 +30,8 @@ jobs:
             shorts-manager-state-
       - name: Install dependencies
         run: python -m pip install requests
+      - name: Validate manager syntax
+        run: python -m py_compile shorts_manager.py
       - name: Process one queued Short
         env:
           GDRIVE_INCOMING_FOLDER_ID: ${{ secrets.GDRIVE_INCOMING_FOLDER_ID }}
