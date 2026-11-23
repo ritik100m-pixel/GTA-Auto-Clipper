@@ -81,7 +81,7 @@ def drive_files(headers, folder):
         params = {
             "q": f"'{folder}' in parents and trashed=false",
             "pageSize": 100, "orderBy": "createdTime",
-            "fields": "nextPageToken,files(id,name,mimeType,size)",
+            "fields": "nextPageToken,files(id,name,mimeType,size,appProperties)",
             "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
         }
         if page:
@@ -153,6 +153,13 @@ def upload(headers, path, title, channel, when):
     return video_id
 
 
+def mark_drive_file(headers, file_id, properties):
+    r = requests.patch(D + f"/files/{file_id}", headers={**headers, "Content-Type": "application/json"},
+                       params={"supportsAllDrives": "true"},
+                       json={"appProperties": properties}, timeout=45)
+    r.raise_for_status()
+
+
 def delete_drive_file(headers, file_id):
     r = requests.delete(D + f"/files/{file_id}", headers=headers,
                         params={"supportsAllDrives": "true"}, timeout=45)
@@ -176,10 +183,21 @@ def run():
             save_state(state)
 
     all_files = drive_files(headers, folder)
+    # Drive-side markers survive GitHub cache eviction and stop ambiguous
+    # upload outcomes from being blindly retried as duplicate publications.
+    for existing in all_files:
+        props = existing.get("appProperties") or {}
+        if props.get("youtubeVideoId"):
+            delete_drive_file(headers, existing["id"])
+            print(f"Cleanup verified upload: {existing.get('name')} -> {props['youtubeVideoId']}")
+        elif props.get("uploadStartedAt"):
+            print(f"MANUAL_REVIEW: previous upload outcome is uncertain for {existing.get('name')}; keeping original and refusing duplicate retry.")
     todo = [f for f in all_files
             if Path(f.get("name", "")).suffix.lower() in EXT
             and f.get("mimeType", "").startswith("video/")
-            and f["id"] not in state["processed"]]
+            and f["id"] not in state["processed"]
+            and not (f.get("appProperties") or {}).get("uploadStartedAt")
+            and not (f.get("appProperties") or {}).get("youtubeVideoId")]
     print(f"Queue: {len(todo)} unprocessed video(s).")
     if not todo:
         print("QUEUE_EMPTY")
@@ -194,7 +212,15 @@ def run():
     title = title_for(item["name"])
     print("Title: " + title)
     scheduled_at = next_slot(state)
+    # Mark before contacting YouTube. If the runner loses the response after
+    # YouTube accepts the upload, the next run will hold for review, not duplicate it.
+    mark_drive_file(headers, item["id"], {"uploadStartedAt": datetime.now(IST).isoformat()})
     video_id = upload(headers, local, title, channel, scheduled_at)
+    # Persist verified ID on Drive itself before deleting the original.
+    mark_drive_file(headers, item["id"], {
+        "uploadStartedAt": datetime.now(IST).isoformat(),
+        "youtubeVideoId": video_id,
+    })
     # Persist verified ID before deletion. If deletion fails, next run only retries cleanup.
     state["processed"][item["id"]] = {
         "name": item["name"], "youtube_video_id": video_id,
