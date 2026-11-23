@@ -176,9 +176,9 @@ def write_summary(message, remaining):
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a", encoding="utf-8") as summary:
-            summary.write("# YouTube Shorts Manager\\n\\n")
-            summary.write(message + "\\n\\n")
-            summary.write(f"Unprocessed videos remaining at scan: **{remaining}**\\n")
+            summary.write("# YouTube Shorts Manager\n\n")
+            summary.write(message + "\n\n")
+            summary.write(f"Unprocessed videos remaining at scan: **{remaining}**\n")
     if remaining <= 2:
         print(f"::warning::Shorts queue is low: {remaining} unprocessed video(s) remain.")
 
