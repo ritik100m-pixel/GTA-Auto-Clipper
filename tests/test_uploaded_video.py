@@ -99,6 +99,25 @@ class UploadedVideoTests(unittest.TestCase):
         current = os.environ.get("GTA_SOURCE_ALLOWLIST_JSON")
         self.assertEqual(current, previous)
 
+    def test_local_release_file_is_queued_without_youtube_metadata_lookup(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "gameplay.mp4"
+            source.write_bytes(b"test-video")
+            info = dict(self.info, id="file-" + "a" * 20, local_path=str(source))
+            with patch("process_uploaded_video._inspect_local_video", return_value=info):
+                process_uploaded_video(
+                    None, "UC-owner", local_file=str(source),
+                    confirm_rights=True,
+                    info_reader=lambda _: self.fail("yt-dlp must not be called"),
+                    runner_factory=FakeRunner,
+                )
+        payload = FakeRunner.last.queue.job["payload"]
+        self.assertEqual(payload["source_type"], "local_video")
+        self.assertEqual(payload["local_path"], str(source))
+        self.assertIsNone(payload["url"])
+
     def test_real_auto_publishing_requires_unattended_opt_in(self):
         with self.assertRaisesRegex(ValueError, "unattended=true"):
             process_uploaded_video(

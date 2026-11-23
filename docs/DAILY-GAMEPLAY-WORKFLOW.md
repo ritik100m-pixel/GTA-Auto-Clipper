@@ -2,15 +2,15 @@
 
 ## Daily use
 
-1. Upload your gameplay recording to your own YouTube channel as **Unlisted**.
-2. Open **Actions → Daily Gameplay Video to Shorts → Run workflow**.
-3. Paste the unlisted video URL, confirm that you own the footage or have explicit rights to edit and publish it, and choose the target number of clips.
-4. For the first test, leave dry-run enabled and publishing disabled.
-5. After the YouTube credentials are configured and the test is successful, enable publishing and unattended scheduling.
+1. Open **Releases** in the GitHub repository and create a release with tag `gameplay-upload` (or reuse that release).
+2. Attach your gameplay video as a release asset named exactly `gameplay.mp4`. Use MP4, MOV, or MKV, maximum 90 minutes. Save/publish the release.
+3. Open **Actions → Daily Gameplay Video to Shorts → Run workflow**.
+4. Set `source_mode = github_release`, `release_tag = gameplay-upload`, and `asset_name = gameplay.mp4`. Confirm rights and choose the target clip count.
+5. For the first test, leave dry-run enabled and publishing disabled.
 
 The workflow accepts one completed regular YouTube video per run. It does not search for streams or process random creators. The configured owner-channel ID must match the channel that uploaded the source video.
 
-GitHub's workflow-dispatch form accepts text inputs, not a binary video upload. Using an unlisted YouTube URL is the first supported upload handoff. The source video remains Unlisted in your YouTube account; the runner downloads a temporary working copy.
+GitHub Actions does not provide a binary file picker in the Run workflow form. Instead, upload the video directly as a GitHub Release asset. Release assets are separate from Git repository history, avoiding large video files bloating source control. The workflow downloads the named asset to a temporary runner folder, processes it locally, and deletes the temporary copy after the run. YouTube URL mode remains available as an alternative, but GitHub runners may be blocked by YouTube bot checks.
 
 ## One-time GitHub setup
 
@@ -40,10 +40,9 @@ The safe default is dry-run with publishing disabled. The script rejects unatten
 
 ## What the workflow does
 
-- Reads metadata for the submitted YouTube video and verifies it is a single completed upload, not a livestream or playlist.
-- Verifies the video channel ID matches the configured owner channel.
-- Requires a manual rights confirmation in the workflow form.
-- Downloads the video into a temporary directory (maximum source duration: 90 minutes).
+- Accepts a video file uploaded as a GitHub Release asset, or optionally a YouTube URL.
+- For a file upload, checks that FFprobe can read a video stream and that its duration is at most 90 minutes. The workflow also requires a manual rights confirmation and uses the configured owner channel for publishing.
+- Downloads the selected Release asset into a temporary runner folder.
 - Splits it into 90-second chunks and reuses the repository's existing audio/speech moment detection, vertical 9:16 rendering, captions, content checks, and deduplication.
 - Schedules only clips created by the current run, using the existing measured posting-time scheduler.
 - Deletes the original downloaded copy, chunks, generated MP4/JSON files, queue database, deduplication state, and other temporary processing data at the end of the job, including after failure.
@@ -60,7 +59,8 @@ This repository is public. GitHub-hosted standard runners for public repositorie
 ## Troubleshooting
 
 - **Owner channel mismatch:** the source video must be uploaded by the YouTube channel whose ID is stored in `GTA_OWNER_CHANNEL_ID`.
-- **yt-dlp cannot download:** check that the video is Unlisted (not Private), processing has finished on YouTube, and the URL is correct. The downloader retries YouTube's sign-in/bot challenge once with the `web_safari` player client. It does not use browser cookies, account sessions, proxies, or bypass access controls. If YouTube still blocks the GitHub-hosted runner, use the supported alternative source-file handoff rather than exporting your primary account cookies.
+- **GitHub Release asset not found:** check the exact release tag and filename. Defaults are tag `gameplay-upload` and asset `gameplay.mp4`.
+- **YouTube URL mode is blocked:** YouTube may challenge GitHub-hosted runner IPs. Use GitHub Release mode instead; it does not use yt-dlp or browser cookies.
 - **OAuth not configured:** dry-run can still validate processing, but real scheduling requires the three YouTube OAuth secrets.
 - **No clips found:** the video may not contain sufficiently strong moments under the current scoring threshold. Try a different gameplay recording or reduce the target; the system will not invent highlights.
 - **Publishing error:** check YouTube Studio before retrying. The publisher records returned YouTube video IDs to prevent duplicate uploads.

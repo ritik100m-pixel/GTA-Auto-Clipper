@@ -258,7 +258,7 @@ class CloudBatchRunner:
                 url = payload.get("url")
                 channel_id = payload.get("channel_id")
 
-                if payload.get("source_type") == "youtube_video":
+                if payload.get("source_type") in {"youtube_video", "local_video"}:
                     source = self.policy.get_source(channel_id) or {}
                     approved_video_ids = {
                         str(value) for value in source.get("approved_video_ids", [])
@@ -279,18 +279,25 @@ class CloudBatchRunner:
                         print(f"Skipped VOD job {job_id}: source or individual video approval is missing.")
                         continue
 
-                    print(f"Processing reviewed YouTube video {video_id}: {url}")
+                    source_kind = payload.get("source_type")
+                    print(f"Processing submitted {source_kind} source: {video_id}")
                     try:
                         with tempfile.TemporaryDirectory(
                             prefix="gta-vod-", dir=str(self.recordings_dir)
                         ) as temp_dir:
-                            info, downloaded = download_youtube_video(
-                                url,
-                                Path(temp_dir) / "download",
-                                expected_video_id=video_id,
-                                expected_channel_id=channel_id,
-                                max_duration_seconds=5400,
-                            )
+                            if source_kind == "local_video":
+                                downloaded = Path(payload.get("local_path") or "").resolve()
+                                if not downloaded.is_file() or downloaded.stat().st_size == 0:
+                                    raise ValueError("The uploaded GitHub Release video file is missing or empty.")
+                                info = payload
+                            else:
+                                info, downloaded = download_youtube_video(
+                                    url,
+                                    Path(temp_dir) / "download",
+                                    expected_video_id=video_id,
+                                    expected_channel_id=channel_id,
+                                    max_duration_seconds=5400,
+                                )
                             chunks = split_video(
                                 downloaded, Path(temp_dir) / "chunks", chunk_seconds=90
                             )
