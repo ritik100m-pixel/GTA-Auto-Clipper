@@ -52,3 +52,9 @@ in YouTube Studio. YouTube API quota and channel restrictions still apply.
 ## Validation
 
 Pull requests run Python compilation and unit tests for title cleanup, schedule spacing, state corruption handling, empty queues, and uncertain-upload duplicate protection. A real Drive/YouTube end-to-end test is still required before enabling unattended runs.
+
+## Handling an uncertain upload
+
+If a run logs `MANUAL_REVIEW`, do not immediately re-upload that file. Open YouTube Studio and check the channel's uploads and scheduled/private videos around the run time. If the video exists, leave the Drive marker in place so the manager can clean up the original. Only if you have confirmed that no corresponding upload exists, rename the Drive file by adding the prefix `RETRY_` (for example, `RETRY_GTA funny moment.mp4`). The next run clears the uncertain marker and allows one deliberate retry.
+
+Low queue status is written to the GitHub Actions run summary and emitted as an Actions warning when two or fewer unprocessed videos remain. This is not yet a direct phone notification.
