@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'shorts_manager.py'
+      - '.github/workflows/youtube-shorts-manager.yml'
+      - 'docs/YOUTUBE-SHORTS-MANAGER.md'
 
 permissions:
   contents: read
@@ -13,6 +18,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-manager:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile manager
+        run: python -m py_compile shorts_manager.py
+
   manage-drive-queue:
     if: ${{ vars.SHORTS_MANAGER_ENABLED == 'true' }}
     runs-on: ubuntu-latest
