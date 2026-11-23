@@ -207,8 +207,12 @@ def run():
         if props.get("youtubeVideoId"):
             delete_drive_file(headers, existing["id"])
             print(f"Cleanup verified upload: {existing.get('name')} -> {props['youtubeVideoId']}")
+        elif props.get("uploadStartedAt") and existing.get("name", "").lower().startswith("retry_"):
+            print(f"Owner requested retry after manual YouTube Studio check: {existing.get('name')}")
+            mark_drive_file(headers, existing["id"], {})
+            existing["appProperties"] = {}
         elif props.get("uploadStartedAt"):
-            print(f"MANUAL_REVIEW: previous upload outcome is uncertain for {existing.get('name')}; keeping original and refusing duplicate retry.")
+            print(f"MANUAL_REVIEW: previous upload outcome is uncertain for {existing.get('name')}; keeping original and refusing duplicate retry. Check YouTube Studio; prefix the filename with RETRY_ only if no upload exists.")
     todo = [f for f in all_files
             if Path(f.get("name", "")).suffix.lower() in EXT
             and f.get("mimeType", "").startswith("video/")
