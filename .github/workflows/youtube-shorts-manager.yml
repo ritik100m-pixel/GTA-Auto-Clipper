@@ -36,7 +36,7 @@ jobs:
   manage-drive-queue:
     if: github.event_name != 'pull_request' && vars.SHORTS_MANAGER_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
