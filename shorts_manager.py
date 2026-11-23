@@ -146,7 +146,13 @@ def upload(headers, path, title, channel, when):
     if len(items) != 1 or items[0].get("snippet", {}).get("channelId") != channel:
         raise RuntimeError("YouTube upload could not be verified on the owner channel.")
     status = items[0].get("status", {})
-    if status.get("privacyStatus") != "private" or status.get("publishAt") != when:
+    returned_publish_at = status.get("publishAt")
+    try:
+        returned_time = datetime.fromisoformat(returned_publish_at.replace("Z", "+00:00"))
+        requested_time = datetime.fromisoformat(when)
+    except (AttributeError, ValueError):
+        raise RuntimeError("YouTube did not return a valid scheduled publication time.")
+    if status.get("privacyStatus") != "private" or returned_time != requested_time:
         raise RuntimeError("YouTube did not confirm the expected private scheduled status.")
     print(f"VERIFIED: https://www.youtube.com/shorts/{video_id}")
     print(f"SCHEDULED_IST: {when}")
