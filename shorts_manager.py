@@ -1,5 +1,5 @@
 """Drive queue -> scheduled YouTube Shorts uploader with verify-before-delete."""
-import json, os, re, sys
+import json, mimetypes, os, re, sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -52,7 +52,7 @@ def next_slot(state):
         date = (now + timedelta(days=day)).date()
         for hour in (11, 19):
             slot = datetime(date.year, date.month, date.day, hour, 30, tzinfo=IST)
-            if slot > now + timedelta(minutes=10):
+            if slot > now + timedelta(minutes=20):
                 return slot.isoformat()
     raise RuntimeError("No future posting slot found")
 
@@ -121,9 +121,10 @@ def upload(headers, path, title, channel, when):
                    "selfDeclaredMadeForKids": False},
     }
     size = path.stat().st_size
+    content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     init = requests.post(Y + "/videos", headers={
         **headers, "Content-Type": "application/json; charset=UTF-8",
-        "X-Upload-Content-Length": str(size), "X-Upload-Content-Type": "video/mp4",
+        "X-Upload-Content-Length": str(size), "X-Upload-Content-Type": content_type,
     }, params={"uploadType": "resumable", "part": "snippet,status"},
        json=meta, timeout=60)
     init.raise_for_status()
@@ -132,7 +133,7 @@ def upload(headers, path, title, channel, when):
         raise RuntimeError("YouTube did not provide a resumable upload URL.")
     with path.open("rb") as f:
         sent = requests.put(url, data=f,
-            headers={"Content-Length": str(size), "Content-Type": "video/mp4"},
+            headers={"Content-Length": str(size), "Content-Type": content_type},
             timeout=(60, 1800))
     sent.raise_for_status()
     video_id = sent.json().get("id")
@@ -144,6 +145,9 @@ def upload(headers, path, title, channel, when):
     items = check.json().get("items", [])
     if len(items) != 1 or items[0].get("snippet", {}).get("channelId") != channel:
         raise RuntimeError("YouTube upload could not be verified on the owner channel.")
+    status = items[0].get("status", {})
+    if status.get("privacyStatus") != "private" or status.get("publishAt") != when:
+        raise RuntimeError("YouTube did not confirm the expected private scheduled status.")
     print(f"VERIFIED: https://www.youtube.com/shorts/{video_id}")
     print(f"SCHEDULED_IST: {when}")
     return video_id
