@@ -2,15 +2,15 @@
 
 ## Daily use
 
-1. Open **Releases** in the GitHub repository and create a release with tag `gameplay-upload` (or reuse that release).
-2. Attach your gameplay video as a release asset named exactly `gameplay.mp4`. Use MP4, MOV, or MKV, maximum 90 minutes. Save/publish the release.
+1. Upload your gameplay video to Google Drive.
+2. In Drive, open **Share → General access → Anyone with the link → Viewer**, then copy the link. The temporary GitHub runner needs this access to download the file.
 3. Open **Actions → Daily Gameplay Video to Shorts → Run workflow**.
-4. Set `source_mode = github_release`, `release_tag = gameplay-upload`, and `asset_name = gameplay.mp4`. Confirm rights and choose the target clip count.
-5. For the first test, leave dry-run enabled and publishing disabled.
+4. Set `source_mode = google_drive` and paste the link into `drive_url`. Confirm rights and choose the target clip count.
+5. For the first test, leave dry-run enabled and publishing disabled. The workflow accepts a video up to 5 GiB and 90 minutes.
 
 The workflow accepts one completed regular YouTube video per run. It does not search for streams or process random creators. The configured owner-channel ID must match the channel that uploaded the source video.
 
-GitHub Actions does not provide a binary file picker in the Run workflow form. Instead, upload the video directly as a GitHub Release asset. Release assets are separate from Git repository history, avoiding large video files bloating source control. The workflow downloads the named asset to a temporary runner folder, processes it locally, and deletes the temporary copy after the run. YouTube URL mode remains available as an alternative, but GitHub runners may be blocked by YouTube bot checks.
+GitHub Actions does not provide a binary file picker in the Run workflow form. Google Drive is the recommended source for large videos; GitHub Release assets remain available for files under GitHub's per-asset limit. Google Drive links set to "Anyone with the link" are accessible to anyone who obtains the link, so share them carefully and remove link access after processing if desired. YouTube URL mode remains available as an alternative, but GitHub runners may be blocked by YouTube bot checks.
 
 ## One-time GitHub setup
 
@@ -40,9 +40,9 @@ The safe default is dry-run with publishing disabled. The script rejects unatten
 
 ## What the workflow does
 
-- Accepts a video file uploaded as a GitHub Release asset, or optionally a YouTube URL.
+- Accepts a Google Drive sharing link (recommended, up to 5 GiB), a GitHub Release asset, or optionally a YouTube URL.
 - For a file upload, checks that FFprobe can read a video stream and that its duration is at most 90 minutes. The workflow also requires a manual rights confirmation and uses the configured owner channel for publishing.
-- Downloads the selected Release asset into a temporary runner folder.
+- Downloads the selected Google Drive file or GitHub Release asset into a temporary runner folder.
 - Splits it into 90-second chunks and reuses the repository's existing audio/speech moment detection, vertical 9:16 rendering, captions, content checks, and deduplication.
 - Schedules only clips created by the current run, using the existing measured posting-time scheduler.
 - Deletes the original downloaded copy, chunks, generated MP4/JSON files, queue database, deduplication state, and other temporary processing data at the end of the job, including after failure.
@@ -59,6 +59,8 @@ This repository is public. GitHub-hosted standard runners for public repositorie
 ## Troubleshooting
 
 - **Owner channel mismatch:** the source video must be uploaded by the YouTube channel whose ID is stored in `GTA_OWNER_CHANNEL_ID`.
+- **Google Drive download failed:** set General access to "Anyone with the link" and permission to Viewer. Paste the normal file sharing URL into `drive_url`; do not use a folder link.
+- **Google Drive file too large:** the workflow limit is 5 GiB; runner disk space and processing time can still constrain very large files.
 - **GitHub Release asset not found:** check the exact release tag and filename. Defaults are tag `gameplay-upload` and asset `gameplay.mp4`.
 - **YouTube URL mode is blocked:** YouTube may challenge GitHub-hosted runner IPs. Use GitHub Release mode instead; it does not use yt-dlp or browser cookies.
 - **OAuth not configured:** dry-run can still validate processing, but real scheduling requires the three YouTube OAuth secrets.
