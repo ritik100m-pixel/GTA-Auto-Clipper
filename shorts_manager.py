@@ -42,8 +42,12 @@ def title_for(filename):
     return (s if "#shorts" in s.lower() else s + " #Shorts")[:100]
 
 
-def next_slot():
+def next_slot(state):
     now = datetime.now(IST)
+    last = [r.get("publish_at") for r in state["processed"].values() if r.get("publish_at")]
+    if last:
+        latest = max(datetime.fromisoformat(value) for value in last)
+        now = max(now, latest)
     for day in range(3):
         date = (now + timedelta(days=day)).date()
         for hour in (11, 19):
@@ -108,8 +112,8 @@ def download(headers, file_id, path):
         raise RuntimeError("Downloaded file is empty; original retained in Drive.")
 
 
-def upload(headers, path, title, channel):
-    when = next_slot()
+def upload(headers, path, title, channel, state):
+    when = next_slot(state)
     meta = {
         "snippet": {"title": title,
                     "description": "Gaming highlights.\n\n#Shorts #Gaming",
@@ -186,11 +190,11 @@ def run():
     download(headers, item["id"], local)
     title = title_for(item["name"])
     print("Title: " + title)
-    video_id = upload(headers, local, title, channel)
+    video_id = upload(headers, local, title, channel, state)
     # Persist verified ID before deletion. If deletion fails, next run only retries cleanup.
     state["processed"][item["id"]] = {
         "name": item["name"], "youtube_video_id": video_id,
-        "title": title, "verified_at": datetime.now(IST).isoformat(),
+        "title": title, "publish_at": next_slot(state), "verified_at": datetime.now(IST).isoformat(),
         "cleanup_pending": True,
     }
     save_state(state)
