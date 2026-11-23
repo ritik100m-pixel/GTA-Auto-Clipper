@@ -35,8 +35,9 @@ def auth():
 
 def title_for(filename):
     s = Path(filename).stem.replace("_", " ")
+    s = re.sub(r"(?i)^retry\s+", "", s)
     s = re.sub(r"\s+", " ", s).strip(" .-_")
-    s = re.sub(r"(?i)\b(final|export|render|video)\b", "", s)
+    s = re.sub(r"(?i)\s+(final|export|render|video)$", "", s)
     s = re.sub(r"\s+", " ", s).strip() or "Epic Gaming Moment"
     s = s[:90].rstrip()
     return (s if "#shorts" in s.lower() else s + " #Shorts")[:100]
@@ -117,8 +118,7 @@ def upload(headers, path, title, channel, when):
         "snippet": {"title": title,
                     "description": "Gaming highlights.\n\n#Shorts #Gaming",
                     "tags": ["Shorts", "Gaming", "Gameplay"], "categoryId": "20"},
-        "status": {"privacyStatus": "private", "publishAt": when,
-                   "selfDeclaredMadeForKids": False},
+        "status": {"privacyStatus": "private", "publishAt": when},
     }
     size = path.stat().st_size
     content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -172,6 +172,17 @@ def delete_drive_file(headers, file_id):
     r.raise_for_status()
 
 
+def write_summary(message, remaining):
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a", encoding="utf-8") as summary:
+            summary.write("# YouTube Shorts Manager\\n\\n")
+            summary.write(message + "\\n\\n")
+            summary.write(f"Unprocessed videos remaining at scan: **{remaining}**\\n")
+    if remaining <= 2:
+        print(f"::warning::Shorts queue is low: {remaining} unprocessed video(s) remain.")
+
+
 def run():
     folder, channel = need("GDRIVE_INCOMING_FOLDER_ID"), need("GTA_OWNER_CHANNEL_ID")
     headers = auth()
@@ -207,6 +218,7 @@ def run():
     print(f"Queue: {len(todo)} unprocessed video(s).")
     if not todo:
         print("QUEUE_EMPTY")
+        write_summary("Queue is empty. Add more ready-to-publish Shorts to the Incoming folder.", 0)
         return
     item = todo[0]
     if int(item.get("size") or 0) > MAX_BYTES:
@@ -239,7 +251,9 @@ def run():
     state["processed"][item["id"]]["deleted_at"] = datetime.now(IST).isoformat()
     save_state(state)
     print(f"SUCCESS: uploaded, verified, and deleted {item['name']}.")
-    print(f"QUEUE_REMAINING_AT_SCAN: {len(todo)-1}")
+    remaining = len(todo) - 1
+    print(f"QUEUE_REMAINING_AT_SCAN: {remaining}")
+    write_summary(f"Successfully scheduled **{title}**. YouTube video ID: `{video_id}`.", remaining)
 
 
 if __name__ == "__main__":
