@@ -16,6 +16,10 @@ The old refresh token may only have YouTube upload scope. It must be re-authoriz
 with Drive scope before this manager can list and delete Drive files. Never put
 credentials in the repository or chat.
 
+## Enable only after setup
+
+Add repository Actions variable `SHORTS_MANAGER_ENABLED` with value `true` only after the OAuth refresh token has both scopes, the folder ID is configured, and a supervised test upload succeeds. Until then the scheduled workflow job is skipped.
+
 ## Operation
 
 - Scheduled check every 30 minutes; GitHub may delay scheduled runs.
@@ -41,6 +45,8 @@ GitHub runner cannot call ChatGPT as an operator in the background. The workflow
 does not spend money or use paid AI services.
 
 The workflow uses GitHub Actions cache for its duplicate ledger. Cache is
-best-effort, not permanent storage. Before enabling unattended publishing for
+best-effort, not permanent storage, so this first version is not a guarantee
+against duplicates after cache eviction or loss. Keep an eye on YouTube Studio
+and do not manually re-upload an item whose result is uncertain. Before enabling unattended publishing for
 the first time, test with one non-critical video and verify the scheduled item
 in YouTube Studio. YouTube API quota and channel restrictions still apply.
