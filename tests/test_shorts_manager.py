@@ -85,5 +85,53 @@ class QueueSafetyTests(unittest.TestCase):
             delete.assert_not_called()
 
 
+class DryRunTests(unittest.TestCase):
+    def test_dry_run_reports_oldest_candidate_without_mutating_drive_or_uploading(self):
+        video = {
+            "id": "drive-file-dry-run",
+            "name": "GTA_Funny_Chase.mp4",
+            "mimeType": "video/mp4",
+            "size": "123",
+            "appProperties": {},
+        }
+        with patch.dict("os.environ", {
+            "GDRIVE_INCOMING_FOLDER_ID": "folder",
+            "GTA_OWNER_CHANNEL_ID": "channel",
+        }), patch.object(manager, "DRY_RUN", True), \
+             patch.object(manager, "auth", return_value={"Authorization": "Bearer test"}), \
+             patch.object(manager, "drive_files", return_value=[video]), \
+             patch.object(manager, "download") as download, \
+             patch.object(manager, "upload") as upload, \
+             patch.object(manager, "mark_drive_file") as mark, \
+             patch.object(manager, "delete_drive_file") as delete, \
+             tempfile.TemporaryDirectory() as tmp:
+            with patch.object(manager, "STATE", Path(tmp) / "state.json"):
+                manager.run()
+            download.assert_not_called()
+            upload.assert_not_called()
+            mark.assert_not_called()
+            delete.assert_not_called()
+
+    def test_dry_run_skips_cleanup_of_previously_verified_drive_files(self):
+        video = {
+            "id": "drive-file-cleanup",
+            "name": "already-uploaded.mp4",
+            "mimeType": "video/mp4",
+            "size": "123",
+            "appProperties": {"youtubeVideoId": "youtube-id"},
+        }
+        with patch.dict("os.environ", {
+            "GDRIVE_INCOMING_FOLDER_ID": "folder",
+            "GTA_OWNER_CHANNEL_ID": "channel",
+        }), patch.object(manager, "DRY_RUN", True), \
+             patch.object(manager, "auth", return_value={"Authorization": "Bearer test"}), \
+             patch.object(manager, "drive_files", return_value=[video]), \
+             patch.object(manager, "delete_drive_file") as delete, \
+             tempfile.TemporaryDirectory() as tmp:
+            with patch.object(manager, "STATE", Path(tmp) / "state.json"):
+                manager.run()
+            delete.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

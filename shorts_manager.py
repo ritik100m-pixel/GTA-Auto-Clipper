@@ -13,6 +13,7 @@ STATE = Path("cloud_state/shorts_manager.json")
 IST = ZoneInfo("Asia/Kolkata")
 EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv"}
 MAX_BYTES = 5 * 1024**3
+DRY_RUN = os.environ.get("SHORTS_MANAGER_DRY_RUN", "").strip().lower() == "true"
 
 
 def need(key):
@@ -197,6 +198,9 @@ def run():
     # Retry cleanup for uploads already verified on YouTube.
     for old_file_id, record in list(state["processed"].items()):
         if record.get("cleanup_pending"):
+            if DRY_RUN:
+                print(f"DRY_RUN: would verify and retry cleanup for Drive file {old_file_id}; no deletion performed.")
+                continue
             try:
                 delete_drive_file(headers, old_file_id)
             except requests.HTTPError as error:
@@ -212,12 +216,18 @@ def run():
     for existing in all_files:
         props = existing.get("appProperties") or {}
         if props.get("youtubeVideoId"):
-            delete_drive_file(headers, existing["id"])
-            print(f"Cleanup verified upload: {existing.get('name')} -> {props['youtubeVideoId']}")
+            if DRY_RUN:
+                print(f"DRY_RUN: would verify and clean up {existing.get('name')} -> {props['youtubeVideoId']}; no deletion performed.")
+            else:
+                delete_drive_file(headers, existing["id"])
+                print(f"Cleanup verified upload: {existing.get('name')} -> {props['youtubeVideoId']}")
         elif props.get("uploadStartedAt") and existing.get("name", "").lower().startswith("retry_"):
             print(f"Owner requested retry after manual YouTube Studio check: {existing.get('name')}")
-            mark_drive_file(headers, existing["id"], {})
-            existing["appProperties"] = {}
+            if DRY_RUN:
+                print("DRY_RUN: would clear the retry marker only after the owner's manual YouTube Studio check; no changes performed.")
+            else:
+                mark_drive_file(headers, existing["id"], {})
+                existing["appProperties"] = {}
         elif props.get("uploadStartedAt"):
             print(f"MANUAL_REVIEW: previous upload outcome is uncertain for {existing.get('name')}; keeping original and refusing duplicate retry. Check YouTube Studio; prefix the filename with RETRY_ only if no upload exists.")
     todo = [f for f in all_files
@@ -234,13 +244,20 @@ def run():
     item = todo[0]
     if int(item.get("size") or 0) > MAX_BYTES:
         raise RuntimeError("Video exceeds 5 GiB; original retained in Drive.")
+    title = title_for(item["name"])
+    scheduled_at = next_slot(state)
+    if DRY_RUN:
+        print("DRY_RUN: no download, upload, Drive marker update, or deletion will occur.")
+        print("DRY_RUN_FILE: " + item["name"])
+        print("DRY_RUN_TITLE: " + title)
+        print("DRY_RUN_SCHEDULED_IST: " + scheduled_at)
+        write_summary(f"Dry run only: would schedule **{title}**. No file was changed.", len(todo))
+        return
     local = Path("incoming") / Path(item["name"]).name
     local.parent.mkdir(parents=True, exist_ok=True)
     print("Processing oldest file: " + item["name"])
     download(headers, item["id"], local)
-    title = title_for(item["name"])
     print("Title: " + title)
-    scheduled_at = next_slot(state)
     # Mark before contacting YouTube. If the runner loses the response after
     # YouTube accepts the upload, the next run will hold for review, not duplicate it.
     mark_drive_file(headers, item["id"], {"uploadStartedAt": datetime.now(IST).isoformat()})
